@@ -1,20 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            background: #111;
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        img {
+            width: 720px;
+            height: 480px;
+            border-radius: 10px;
+            border: 2px solid #444;
+            margin-top: 20px;
+        }
+        #status {
+            font-size: 1.2rem;
+            margin-top: 15px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to {{ title }}</h1>
-    <p id="message"></p>
-    <button onclick="showMessage()">Click Me</button>
+    <h1>✋ MediaPipe Flask App</h1>
 
-    <button id="soundButton">Play Sound</button>
-    <!-- The audio element to embed the sound file -->
-    <audio id="clickSound" src="{{ url_for('static', filename='audio/AUDIO_1269.mp3') }}" preload="auto"></audio>
+    <img id="videoStream" src="{{ url_for('video_feed') }}" alt="Camera feed">
+    <p id="status">Waiting for detection...</p>
 
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log("Connected to server!");
+        });
+
+        socket.on('detection_event', (data) => {
+            console.log('Left hand detected!', data);
+            const status = document.getElementById('status');
+            status.innerText = '✋ Left hand detected!';
+            status.style.color = '#0f0';
+            setTimeout(() => {
+                status.innerText = 'Waiting for detection...';
+                status.style.color = 'white';
+            }, 1000);
+        });
+    </script>
 </body>
 </html>
