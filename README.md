@@ -1,4 +1,4 @@
-# MediaPipe Flask App
+# AIR App
 
 ## Setup
 
