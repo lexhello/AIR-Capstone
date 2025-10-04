@@ -11,6 +11,10 @@
     <p id="message"></p>
     <button onclick="showMessage()">Click Me</button>
 
+    <button id="soundButton">Play Sound</button>
+    <!-- The audio element to embed the sound file -->
+    <audio id="clickSound" src="{{ url_for('static', filename='audio/AUDIO_1269.mp3') }}" preload="auto"></audio>
+
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
