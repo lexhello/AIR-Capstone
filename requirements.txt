@@ -3,3 +3,4 @@ Flask-SocketIO==6.6.1
 opencv-python==4.8.1.78
 mediapipe==0.10.12
 protobuf==4.24.3
+pygame
