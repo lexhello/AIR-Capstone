@@ -84,8 +84,8 @@ class HandApp(QWidget):
         """Helper function to compute Euclidean distance between two 2D points."""
         return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 
+    # Return the angle (in degrees) formed by points a-b-c at b.
     def finger_angle(self, a, b, c):
-        """Return the angle (in degrees) formed by points a-b-c at b."""
         ba = (a[0] - b[0], a[1] - b[1])
         bc = (c[0] - b[0], c[1] - b[1])
         dot = ba[0]*bc[0] + ba[1]*bc[1]
