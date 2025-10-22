@@ -8,6 +8,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 import simpleaudio as sa
 import math
+import pygame
 
 # --- MediaPipe setup ---
 mp_hands = mp.solutions.hands
@@ -56,6 +57,17 @@ class HandApp(QWidget):
         except Exception:
             self.sound = None
             print("No beep.wav found – sound disabled.")
+        pygame.mixer.init()
+        try:
+            self.c4 = pygame.mixer.Sound("static/audio/c-4.mp3")
+            self.d4 = pygame.mixer.Sound("static/audio/d-4.mp3")
+            self.e4 = pygame.mixer.Sound("static/audio/e4.mp3")
+            self.f4 = pygame.mixer.Sound("static/audio/f-4.mp3")
+            self.g4 = pygame.mixer.Sound("static/audio/g-4.mp3")
+            self.a5 = pygame.mixer.Sound("static/audio/a-5.mp3")
+            print("Audio files loaded successfully.")
+        except Exception as e:
+            print("Error loading audio:", e)
 
     def toggle_camera(self):
         if self.timer.isActive():
@@ -72,39 +84,40 @@ class HandApp(QWidget):
         """Helper function to compute Euclidean distance between two 2D points."""
         return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 
+    def finger_angle(self, a, b, c):
+        """Return the angle (in degrees) formed by points a-b-c at b."""
+        ba = (a[0] - b[0], a[1] - b[1])
+        bc = (c[0] - b[0], c[1] - b[1])
+        dot = ba[0]*bc[0] + ba[1]*bc[1]
+        mag = math.sqrt((ba[0]**2 + ba[1]**2) * (bc[0]**2 + bc[1]**2))
+        if mag == 0:
+            return 180
+        cos_angle = max(min(dot / mag, 1), -1)
+        return math.degrees(math.acos(cos_angle))
+
     def detect_fingers(self, landmarks):
-        """Return dict with finger name -> bent/straight"""
+        coords = [(lm.x, lm.y, lm.z) for lm in landmarks.landmark]
         finger_states = {}
 
-        # Extract landmarks into simpler lists
-        coords = [(lm.x, lm.y) for lm in landmarks.landmark]
-
-        # Thumb uses x axis comparison (sideways)
+        # Thumb (use x-axis since it's sideways)
         thumb_tip_x, thumb_ip_x = coords[FINGER_TIPS[0]][0], coords[FINGER_PIPS[0]][0]
         finger_states["Thumb"] = "Bent" if thumb_tip_x < thumb_ip_x else "Straight"
 
-        # Other fingers use y axis comparison (vertical)
-        for i in range(1, 5):
-            if i in [2, 3, 4]:
-                # --- Middle Finger (ratio comparison) ---
-                base = coords[FINGER_BASES[i]]   # MCP
-                mid = coords[FINGER_PIPS[i]]   # PIP
-                tip = coords[FINGER_TIPS[i]]   # TIP
-                base_to_mid = self.distance(base, mid)
-                mid_to_tip = self.distance(mid, tip)
-                ratio = mid_to_tip / base_to_mid if base_to_mid != 0 else 0
+        # Other fingers – use joint angles
+        for i, name in enumerate(FINGER_NAMES[1:], start=1):
+            mcp = coords[FINGER_BASES[i]]  # base
+            pip = coords[FINGER_PIPS[i]]   # middle
+            tip = coords[FINGER_TIPS[i]]   # tip
 
-                if ratio < 0.6:  # Threshold can be tuned between 0.6–0.8
-                    # finger_states["Middle"] = f"Bent ({ratio:.2f})"
-                    finger_states[FINGER_NAMES[i]] = "Bent"
-                else:
-                    # finger_states["Middle"] = f"Straight ({ratio:.2f})"
-                    finger_states[FINGER_NAMES[i]] = "Straight"
+            angle = self.finger_angle(mcp, pip, tip)
+            # smaller angle = more bent
+            if angle < 160:  # tweak: 150–170
+                finger_states[name] = "Bent"
             else:
-                tip_y, pip_y = coords[FINGER_TIPS[i]][1], coords[FINGER_PIPS[i]][1]
-                finger_states[FINGER_NAMES[i]] = "Bent" if tip_y > pip_y else "Straight"
+                finger_states[name] = "Straight"
 
         return finger_states
+
 
     def update_frame(self):
         ret, frame = self.cap.read()
@@ -125,8 +138,27 @@ class HandApp(QWidget):
                 states = self.detect_fingers(hand_landmarks)
                 finger_text = " | ".join([f"{f}: {s}" for f, s in states.items()])
 
-                if states.get("Index") == "Bent":
-                    self.sound.play()
+                # if states.get("Index") == "Bent":
+                #     self.sound.play()
+
+                # hand is position 1
+                if states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
+                    self.c4.play()
+                # hand in position 2
+                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
+                    self.d4.play()
+                # hand in position 3
+                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Bent":
+                    self.e4.play()
+                # hand in position 4
+                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight":
+                    self.f4.play()
+                # hand in position 5
+                elif states.get("Thumb") == "Straight" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight":
+                    self.g4.play()
+                # hand is position 6
+                elif states.get("Thumb") == "Straight" and states.get("Index") == "Bent" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
+                    self.a5.play()
                     
                 # # Play sound on left-hand detection (optional)
                 # if not self.cooldown:
