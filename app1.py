@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWid
 import simpleaudio as sa
 import math
 import pygame
+from PyQt5.QtWidgets import QComboBox
 
 # --- MediaPipe setup ---
 mp_hands = mp.solutions.hands
@@ -37,21 +38,27 @@ class HandApp(QWidget):
 
         self.button = QPushButton("Start Camera")
         self.button.clicked.connect(self.toggle_camera)
+        self.mode_dropdown = QComboBox()
+        self.mode_dropdown.addItems(["normal", "lisa"])
+        self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
 
         layout = QVBoxLayout()
         layout.addWidget(self.video_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.button)
+        layout.addWidget(self.mode_dropdown)
+
         self.setLayout(layout)
 
         self.cap = None
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_frame)
+        self.active_notes = set()
+        self.currently_playing = set()
 
         self.cooldown = False
         self.cooldown_duration = 1.0
         self.last_detection_time = 0
-
         try:
             self.sound = sa.WaveObject.from_wave_file("beep.wav")
         except Exception:
@@ -59,13 +66,26 @@ class HandApp(QWidget):
             print("No beep.wav found – sound disabled.")
         pygame.mixer.init()
         try:
-            self.c4 = pygame.mixer.Sound("static/audio/c-4.mp3")
-            self.d4 = pygame.mixer.Sound("static/audio/d-4.mp3")
-            self.e4 = pygame.mixer.Sound("static/audio/e4.mp3")
-            self.f4 = pygame.mixer.Sound("static/audio/f-4.mp3")
-            self.g4 = pygame.mixer.Sound("static/audio/g-4.mp3")
-            self.a5 = pygame.mixer.Sound("static/audio/a-5.mp3")
-            print("Audio files loaded successfully.")
+            if self.mode_dropdown.currentText() == "normal":
+                self.c4 = pygame.mixer.Sound("static/audio/c4.mp3")
+                self.d4 = pygame.mixer.Sound("static/audio/d4.mp3")
+                self.e4 = pygame.mixer.Sound("static/audio/e4.mp3")
+                self.f4 = pygame.mixer.Sound("static/audio/f4.mp3")
+                self.g4 = pygame.mixer.Sound("static/audio/g4.mp3")
+                self.a4 = pygame.mixer.Sound("static/audio/a4.mp3")
+                self.b4 = pygame.mixer.Sound("static/audio/b4.mp3")
+                self.c5 = pygame.mixer.Sound("static/audio/c5.mp3")
+                print("Audio files loaded successfully.")
+            elif self.mode_dropdown.currentText() == "lisa":
+                self.c4 = pygame.mixer.Sound("static/audio/lisa-a3.mp3")
+                self.d4 = pygame.mixer.Sound("static/audio/lisa-b3.mp3")
+                self.e4 = pygame.mixer.Sound("static/audio/lisa-c4.mp3")
+                self.f4 = pygame.mixer.Sound("static/audio/lisa-d4.mp3")
+                self.g4 = pygame.mixer.Sound("static/audio/lisa-e4.mp3")
+                self.a4 = pygame.mixer.Sound("static/audio/lisa-f4.mp3")
+                self.b4 = pygame.mixer.Sound("static/audio/lisa-g4.mp3")
+                self.c5 = pygame.mixer.Sound("static/audio/lisa-a4.mp3")    
+                print("Lisa audio files loaded successfully.")
         except Exception as e:
             print("Error loading audio:", e)
 
@@ -79,6 +99,33 @@ class HandApp(QWidget):
             self.cap = cv2.VideoCapture(0)
             self.timer.start(30)
             self.button.setText("Stop Camera")
+    
+    def on_dropdown_change(self, index):
+        selected_mode = self.mode_dropdown.currentText()
+        print(f"Mode changed to: {selected_mode}")
+        try:
+            if selected_mode == "normal":
+                self.c4 = pygame.mixer.Sound("static/audio/c4.mp3")
+                self.d4 = pygame.mixer.Sound("static/audio/d4.mp3")
+                self.e4 = pygame.mixer.Sound("static/audio/e4.mp3")
+                self.f4 = pygame.mixer.Sound("static/audio/f4.mp3")
+                self.g4 = pygame.mixer.Sound("static/audio/g4.mp3")
+                self.a4 = pygame.mixer.Sound("static/audio/a4.mp3")
+                self.b4 = pygame.mixer.Sound("static/audio/b4.mp3")
+                self.c5 = pygame.mixer.Sound("static/audio/c5.mp3")
+                print("Switched to normal audio files.")
+            elif selected_mode == "lisa":
+                self.c4 = pygame.mixer.Sound("static/audio/lisa-a3.mp3")
+                self.d4 = pygame.mixer.Sound("static/audio/lisa-b3.mp3")
+                self.e4 = pygame.mixer.Sound("static/audio/lisa-c4.mp3")
+                self.f4 = pygame.mixer.Sound("static/audio/lisa-d4.mp3")
+                self.g4 = pygame.mixer.Sound("static/audio/lisa-e4.mp3")
+                self.a4 = pygame.mixer.Sound("static/audio/lisa-f4.mp3")
+                self.b4 = pygame.mixer.Sound("static/audio/lisa-g4.mp3")
+                self.c5 = pygame.mixer.Sound("static/audio/lisa-a4.mp3")
+                print("Switched to lisa audio files.")
+        except Exception as e:
+            print("Error loading audio on mode change:", e)
 
     def distance(self, a, b):
         """Helper function to compute Euclidean distance between two 2D points."""
@@ -141,24 +188,83 @@ class HandApp(QWidget):
                 # if states.get("Index") == "Bent":
                 #     self.sound.play()
 
+                pattern1 = states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent"
+                pattern2 = states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent"
+                pattern3 = states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Bent"
+                pattern4 = states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight"
+                pattern5 = states.get("Thumb") == "Straight" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight"
+                pattern6 = states.get("Thumb") == "Straight" and states.get("Index") == "Bent" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent"
+
                 # hand is position 1
-                if states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
-                    self.c4.play()
+                if pattern1:
+                    self.currently_playing.add("c4")
+                    self.currently_playing.add("e4")
+                    self.currently_playing.add("g4")
                 # hand in position 2
-                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
-                    self.d4.play()
+                elif pattern2:
+                    self.currently_playing.add("d4")
+                    self.currently_playing.add("f4")
+                    self.currently_playing.add("a4")
                 # hand in position 3
-                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Bent":
-                    self.e4.play()
+                elif pattern3:
+                    self.currently_playing.add("e4")
+                    self.currently_playing.add("g4")
+                    self.currently_playing.add("b4")
                 # hand in position 4
-                elif states.get("Thumb") == "Bent" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight":
-                    self.f4.play()
+                elif pattern4:
+                    self.currently_playing.add("f4")
+                    self.currently_playing.add("a4")
+                    self.currently_playing.add("c5")
                 # hand in position 5
-                elif states.get("Thumb") == "Straight" and states.get("Index") == "Straight" and states.get("Middle") == "Straight" and states.get("Ring") == "Straight" and states.get("Pinky") == "Straight":
-                    self.g4.play()
+                elif pattern5:
+                    self.currently_playing.add("g4")
+                    self.currently_playing.add("b4")
+                    self.currently_playing.add("d5")
                 # hand is position 6
-                elif states.get("Thumb") == "Straight" and states.get("Index") == "Bent" and states.get("Middle") == "Bent" and states.get("Ring") == "Bent" and states.get("Pinky") == "Bent":
-                    self.a5.play()
+                elif pattern6:
+                    self.currently_playing.add("a4")
+                    self.currently_playing.add("c5")
+
+                to_stop = self.active_notes - self.currently_playing
+                to_start = self.currently_playing - self.active_notes
+
+                for note in to_stop:
+                    if note == "c4":
+                        self.c4.stop()
+                    elif note == "d4":
+                        self.d4.stop()
+                    elif note == "e4":
+                        self.e4.stop()
+                    elif note == "f4":
+                        self.f4.stop()
+                    elif note == "g4":
+                        self.g4.stop()
+                    elif note == "a4":
+                        self.a4.stop()
+                    elif note == "b4":
+                        self.b4.stop()
+                    elif note == "c5":
+                        self.c5.stop()
+                # Play active notes
+                for note in to_start:
+                    if note == "c4":
+                        self.c4.play()
+                    elif note == "d4":
+                        self.d4.play()
+                    elif note == "e4":
+                        self.e4.play()
+                    elif note == "f4":
+                        self.f4.play()
+                    elif note == "g4":
+                        self.g4.play()
+                    elif note == "a4":
+                        self.a4.play()
+                    elif note == "b4":
+                        self.b4.play()
+                    elif note == "c5":
+                        self.c5.play()
+                self.active_notes = self.currently_playing.copy()
+                self.currently_playing.clear()
                     
                 # # Play sound on left-hand detection (optional)
                 # if not self.cooldown:
