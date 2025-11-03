@@ -4,53 +4,66 @@ from bleak import BleakScanner, BleakClient
 SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-async def main():
-    print("🔍 Scanning for BLE devices...")
-    devices = await BleakScanner.discover(timeout=6.0)
+class BLEReader:
+    def __init__(self, address: str, client: BleakClient):
+        self.address = address
+        self.client = client
 
-    target = None
-    for d in devices:
-        print(f"- {d.name or 'Unknown'} ({d.address})")
-        if d.name and "XIAO_ESP32S3" in d.name:
-            target = d
-            break
+    # 🧩 Async factory method — performs scanning and connection
+    @classmethod
+    async def create(cls):
+        print("🔍 Scanning for BLE devices...")
+        devices = await BleakScanner.discover(timeout=6.0)
 
-    if not target:
-        print("❌ Could not find XIAO_ESP32S3. Make sure it's powered and advertising.")
-        return
+        target = None
+        for d in devices:
+            print(f"- {d.name or 'Unknown'} ({d.address})")
+            if d.name and "XIAO_ESP32S3" in d.name:
+                target = d
+                break
 
-    print(f"\n✅ Found device: {target.name} [{target.address}]")
-    print("Connecting...")
+        if not target:
+            raise RuntimeError("Could not find XIAO_ESP32S3.")
 
-    async with BleakClient(target.address) as client:
+        print(f"\n Found device: {target.name} [{target.address}]")
+        print("Connecting...")
+
+        client = BleakClient(target.address)
+        await client.connect()
+
         if not await client.is_connected():
-            print("❌ Failed to connect.")
-            return
+            raise RuntimeError("Failed to connect to ESP32 BLE Server")
 
-        print("✅ Connected to ESP32 BLE Server")
+        print("CONNECTED !!  to ESP32 BLE Server")
+        return cls(target.address, client)
 
-        # --- Read initial value ---
-        try:
-            value = await client.read_gatt_char(CHARACTERISTIC_UUID)
-            print(f"📖 Initial characteristic value: {value.decode('utf-8', errors='ignore')}")
-        except Exception as e:
-            print("⚠️ Error reading characteristic:", e)
+    async def read_characteristic(self):
+        value = await self.client.read_gatt_char(CHARACTERISTIC_UUID)
+        decoded = value.decode('utf-8', errors='ignore')
+        print(f"Read value: {decoded}")
+        return decoded
 
-        # --- Write a new value ---
-        try:
-            new_value = "Hello from macOS 🧠"
-            await client.write_gatt_char(CHARACTERISTIC_UUID, new_value.encode('utf-8'))
-            print(f"✍️ Wrote new value: {new_value}")
-        except Exception as e:
-            print("⚠️ Error writing characteristic:", e)
+    async def disconnect(self):
+        await self.client.disconnect()
+        print("Disconnected.")
 
-        # --- Verify write ---
-        try:
-            updated = await client.read_gatt_char(CHARACTERISTIC_UUID)
-            print(f"📖 Updated characteristic value: {updated.decode('utf-8', errors='ignore')}")
-        except Exception as e:
-            print("⚠️ Error re-reading characteristic:", e)
 
-    print("🔌 Disconnected.")
+# --- Example usage ---
+async def main():
+    try:
+        ble = await BLEReader.create()  # async constructor
 
-asyncio.run(main())
+        await ble.read_characteristic()
+        await ble.write_characteristic("Hello from macOS 🧠")
+        await ble.read_characteristic()
+
+    except Exception as e:
+        print(f"⚠️ Error: {e}")
+
+    finally:
+        if 'ble' in locals():
+            await ble.disconnect()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
