@@ -9,7 +9,11 @@ from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWid
 import simpleaudio as sa
 import math
 import pygame
+import sys
+from qasync import QEventLoop, asyncSlot
 from PyQt5.QtWidgets import QComboBox
+from receiver import BLEReader
+import asyncio
 
 # --- MediaPipe setup ---
 mp_hands = mp.solutions.hands
@@ -22,7 +26,10 @@ FINGER_PIPS = [3, 6, 10, 14, 18]
 FINGER_BASES = [2, 5, 9, 13, 17]
 FINGER_NAMES = ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 
+# --- Delay times ------
+DELAYS = [0.040, 0.030, 0.020, 0.010]
 class HandApp(QWidget):
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MediaPipe Hand Detection App")
@@ -59,6 +66,8 @@ class HandApp(QWidget):
         self.cooldown = False
         self.cooldown_duration = 1.0
         self.last_detection_time = 0
+        self.ble = None
+        
         try:
             self.sound = sa.WaveObject.from_wave_file("beep.wav")
         except Exception:
@@ -88,6 +97,14 @@ class HandApp(QWidget):
                 print("Lisa audio files loaded successfully.")
         except Exception as e:
             print("Error loading audio:", e)
+        
+    async def init_ble(self):
+        try:
+            self.ble = await BLEReader.create()  # async constructor
+            await self.ble.read_characteristic()
+        except Exception as e:
+            self.ble = None
+            print(f"CAN'T CONNECT TO BLE Error: {e}")
 
     def toggle_camera(self):
         if self.timer.isActive():
@@ -166,7 +183,7 @@ class HandApp(QWidget):
         return finger_states
 
 
-    def update_frame(self):
+    async def update_frame(self):
         ret, frame = self.cap.read()
         if not ret:
             return
@@ -225,6 +242,13 @@ class HandApp(QWidget):
                     self.currently_playing.add("a4")
                     self.currently_playing.add("c5")
 
+                speed_bucket, new_strum = await self.ble.read_characteristic()
+                if new_strum is not None:
+                    self.active_notes = set()
+                    if speed_bucket is not None:
+                        delay = DELAYS[speed_bucket]
+                    
+                
                 to_stop = self.active_notes - self.currently_playing
                 to_start = self.currently_playing - self.active_notes
 
@@ -263,6 +287,7 @@ class HandApp(QWidget):
                         self.b4.play()
                     elif note == "c5":
                         self.c5.play()
+                        
                 self.active_notes = self.currently_playing.copy()
                 self.currently_playing.clear()
                     
@@ -300,8 +325,17 @@ class HandApp(QWidget):
             self.cap.release()
         event.accept()
 
-if __name__ == "__main__":
-    app = QApplication([])
+async def main():
+    app = QApplication(sys.argv)
+    loop = QEventLoop(app)
+    
     win = HandApp()
+    await win.init_ble()
     win.show()
     app.exec_()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    
+    

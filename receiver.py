@@ -3,6 +3,7 @@ from bleak import BleakScanner, BleakClient
 
 SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+TIMEOUT_MS = 50
 
 class BLEReader:
     def __init__(self, address: str, client: BleakClient):
@@ -38,10 +39,22 @@ class BLEReader:
         return cls(target.address, client)
 
     async def read_characteristic(self):
-        value = await self.client.read_gatt_char(CHARACTERISTIC_UUID)
+        # value = await self.client.read_gatt_char(CHARACTERISTIC_UUID)
+        try:
+            value = await asyncio.wait_for(
+                    self.client.read_gatt_char(CHARACTERISTIC_UUID),
+                    timeout=TIMEOUT_MS / 1000.0
+                )
+        except asyncio.TimeoutError:
+            return None, None
+        except Exception as e:
+            print(f"Error reading characteristic: {e}")
+            return None, None
+        
         decoded = value.decode('utf-8', errors='ignore')
+        speed_bucket, new_strum = decoded.split(',').strip()
         print(f"Read value: {decoded}")
-        return decoded
+        return speed_bucket, new_strum
 
     async def disconnect(self):
         await self.client.disconnect()
@@ -49,21 +62,21 @@ class BLEReader:
 
 
 # --- Example usage ---
-async def main():
-    try:
-        ble = await BLEReader.create()  # async constructor
+# async def main():
+#     try:
+#         ble = await BLEReader.create()  # async constructor
 
-        await ble.read_characteristic()
-        await ble.write_characteristic("Hello from macOS 🧠")
-        await ble.read_characteristic()
+#         await ble.read_characteristic()
+#         await ble.write_characteristic("Hello from macOS 🧠")
+#         await ble.read_characteristic()
 
-    except Exception as e:
-        print(f"⚠️ Error: {e}")
+#     except Exception as e:
+#         print(f"⚠️ Error: {e}")
 
-    finally:
-        if 'ble' in locals():
-            await ble.disconnect()
+#     finally:
+#         if 'ble' in locals():
+#             await ble.disconnect()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
