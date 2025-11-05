@@ -68,6 +68,7 @@ class HandApp(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(lambda: asyncio.create_task(self.update_frame()))
         self.active_notes = set()
+        self.selected_notes = set()
         self.currently_playing = set()
         self.new_strum_flag = [False]  # <- mutable boolean
 
@@ -233,16 +234,21 @@ class HandApp(QWidget):
                 self.currently_playing.clear()
                 for fingers, states_list, notes in patterns:
                     if all(states[f] == s for f, s in zip(fingers, states_list)):
-                        self.currently_playing.update(notes)
+                        self.selected_notes.update(notes)
+                        #self.currently_playing.update(notes)
                         break
 
                 # Check BLE event flag
                 if self.new_strum_flag[0]:
-                    self.active_notes = set()
+                    self.active_notes = self.currently_playing.copy()
+                    self.currently_playing = self.selected_notes.copy()
                     self.new_strum_flag[0] = False  # reset flag
 
-                to_stop = self.active_notes - self.currently_playing
-                to_start = self.currently_playing - self.active_notes
+                # to_stop = self.active_notes - self.currently_playing
+                # to_start = self.currently_playing - self.active_notes
+                
+                to_start = self.currently_playing
+                to_stop = self.active_notes
 
                 # Stop notes
                 for note in to_stop:
@@ -251,7 +257,8 @@ class HandApp(QWidget):
                 for note in to_start:
                     getattr(self, note).play()
 
-                self.active_notes = self.currently_playing.copy()
+                self.currently_playing = set()
+                self.selected_notes = set()
 
         self.status_label.setText(f"Finger Status: {finger_text}")
 
