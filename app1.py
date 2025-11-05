@@ -6,11 +6,10 @@ import numpy as np
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
-import simpleaudio as sa
 import math
 import pygame
 import sys
-from qasync import QEventLoop, asyncSlot
+from qasync import QEventLoop, run
 from PyQt5.QtWidgets import QComboBox
 from receiver import BLEReader
 import asyncio
@@ -59,7 +58,8 @@ class HandApp(QWidget):
 
         self.cap = None
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_frame)
+        # self.timer.timeout.connect(self.update_frame)
+        self.timer.timeout.connect(lambda: asyncio.create_task(self.update_frame()))
         self.active_notes = set()
         self.currently_playing = set()
 
@@ -67,7 +67,10 @@ class HandApp(QWidget):
         self.cooldown_duration = 1.0
         self.last_detection_time = 0
         self.ble = None
+
         
+    async def init_audio(self):
+        print("in init function")
         try:
             self.sound = sa.WaveObject.from_wave_file("beep.wav")
         except Exception:
@@ -184,6 +187,8 @@ class HandApp(QWidget):
 
 
     async def update_frame(self):
+        
+        print("starting update_frame")
         ret, frame = self.cap.read()
         if not ret:
             return
@@ -242,11 +247,14 @@ class HandApp(QWidget):
                     self.currently_playing.add("a4")
                     self.currently_playing.add("c5")
 
-                speed_bucket, new_strum = await self.ble.read_characteristic()
+                speed_bucket, new_strum = None, None
+                if self.ble is not None:
+                    speed_bucket, new_strum = await self.ble.read_characteristic()
                 if new_strum is not None:
                     self.active_notes = set()
                     if speed_bucket is not None:
-                        delay = DELAYS[speed_bucket]
+                        pass
+                        #delay = DELAYS[speed_bucket]
                     
                 
                 to_stop = self.active_notes - self.currently_playing
@@ -328,14 +336,15 @@ class HandApp(QWidget):
 async def main():
     app = QApplication(sys.argv)
     loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
     
     win = HandApp()
-    await win.init_ble()
     win.show()
-    app.exec_()
+    await win.init_ble()
+    await win.init_audio()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run(main())
     
     

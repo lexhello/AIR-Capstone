@@ -32,7 +32,7 @@ class BLEReader:
         client = BleakClient(target.address)
         await client.connect()
 
-        if not await client.is_connected():
+        if not client.is_connected:
             raise RuntimeError("Failed to connect to ESP32 BLE Server")
 
         print("CONNECTED !!  to ESP32 BLE Server")
@@ -52,7 +52,7 @@ class BLEReader:
             return None, None
         
         decoded = value.decode('utf-8', errors='ignore')
-        speed_bucket, new_strum = decoded.split(',').strip()
+        speed_bucket, new_strum = decoded.strip().split(',')
         print(f"Read value: {decoded}")
         return speed_bucket, new_strum
 
