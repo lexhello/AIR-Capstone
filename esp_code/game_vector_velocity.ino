@@ -1,175 +1,52 @@
-// #include <Adafruit_BNO08x.h>
-// #include <math.h>
+// ===================== BLE (same style, with NOTIFY) =====================
+#include <BLEDevice.h> 
+#include <BLEUtils.h>
+#include <BLEServer.h>
 
-// #define BNO08X_CS    10
-// #define BNO08X_INT   9
-// #define BNO08X_RESET -1
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-// Adafruit_BNO08x bno08x(BNO08X_RESET);
-// sh2_SensorValue_t sensorValue;
+BLECharacteristic *pCharacteristic;
 
-// const uint16_t REPORT_US = 10000; // ~100 Hz
-// #define COMPARE_WITH_GYRO 0       // set to 1 to also enable SH2_GYROSCOPE_CALIBRATED
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Starting BLE work!");
 
-// // Current and previous GameRV quaternions (unit)
-// static float q_w = 1.f, q_x = 0.f, q_y = 0.f, q_z = 0.f;
-// static float qpw = 1.f, qpx = 0.f, qpy = 0.f, qpz = 0.f;
+  BLEDevice::init("XIAO_ESP32S3");
+  BLEServer *pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
 
-// // Timestamps (sensor clock, microseconds)
-// static uint32_t ts_prev = 0;
-// static bool have_prev = false;
+  pCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_WRITE |
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
 
-// // ---- helpers ----
-// static inline float vmag(float x, float y, float z) {
-//   return sqrtf(x*x + y*y + z*z);
-// }
+  pCharacteristic->setValue("Hello World");
+  pService->start();
 
-// static inline void quatNormalize(float &w, float &x, float &y, float &z) {
-//   float n = sqrtf(w*w + x*x + y*y + z*z);
-//   if (n > 0.f) { w/=n; x/=n; y/=n; z/=n; }
-// }
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+  Serial.println("Characteristic defined! Connect and enable notifications.");
+}
 
-// static inline void quatConj(float w, float x, float y, float z,
-//                             float &cw, float &cx, float &cy, float &cz) {
-//   cw =  w; cx = -x; cy = -y; cz = -z;
-// }
+void sendBLE(int new_strum) {
+  if (pCharacteristic != nullptr) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "test, %d", new_strum);
+    pCharacteristic->setValue(buf);
+    pCharacteristic->notify();
+    Serial.print("📤 Sent integer as string: ");
+    Serial.println(buf);
+  }
+}
 
-// static inline void quatMul(float aw, float ax, float ay, float az,
-//                            float bw, float bx, float by, float bz,
-//                            float &ow, float &ox, float &oy, float &oz) {
-//   ow = aw*bw - ax*bx - ay*by - az*bz;
-//   ox = aw*bx + ax*bw + ay*bz - az*by;
-//   oy = aw*by - ax*bz + ay*bw + az*bx;
-//   oz = aw*bz + ax*by - ay*bx + az*bw;
-// }
-
-// // 32-bit microsecond wrap handling
-// static inline float dt_from_timestamps(uint32_t nowTs, uint32_t prevTs) {
-//   uint32_t d = (nowTs >= prevTs) ? (nowTs - prevTs)
-//                                  : (0xFFFFFFFFu - prevTs + 1u + nowTs);
-//   return d * 1e-6f; // seconds
-// }
-
-// // Compute angular velocity from consecutive quaternions.
-// // q_delta = conj(q_prev) ⊗ q_now;  θ = 2*acos(q_delta.w);  axis = d_vec/sin(θ/2);
-// // ω = axis * (θ/Δt)
-// static bool omega_from_quats(float qpw, float qpx, float qpy, float qpz,
-//                              float qnw, float qnx, float qny, float qnz,
-//                              float dt, float &wx, float &wy, float &wz) {
-//   if (dt <= 0.f) return false;
-
-//   float cw, cx, cy, cz;
-//   quatConj(qpw, qpx, qpy, qpz, cw, cx, cy, cz);
-
-//   float dw, dx, dy, dz;
-//   quatMul(cw, cx, cy, cz, qnw, qnx, qny, qnz, dw, dx, dy, dz);
-//   quatNormalize(dw, dx, dy, dz);
-
-//   // ensure shortest arc
-//   if (dw < 0.f) { dw = -dw; dx = -dx; dy = -dy; dz = -dz; }
-
-//   float half_angle = acosf(fmaxf(-1.f, fminf(1.f, dw))); // [0, pi]
-//   float sin_half   = sinf(half_angle);
-//   float theta      = 2.f * half_angle;
-
-//   if (theta < 1e-7f || fabsf(sin_half) < 1e-7f) {
-//     wx = wy = wz = 0.f;
-//     return true;
-//   }
-
-//   float ax = dx / sin_half;
-//   float ay = dy / sin_half;
-//   float az = dz / sin_half;
-
-//   float rate = theta / dt; // rad/s
-//   wx = ax * rate;
-//   wy = ay * rate;
-//   wz = az * rate;
-//   return true;
-// }
-
-// // ---- setup / loop ----
-// static void setReports() {
-//   if (!bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US)) {
-//     Serial.println("Could not enable Game Rotation Vector");
-//   }
-// #if COMPARE_WITH_GYRO
-//   if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, REPORT_US)) {
-//     Serial.println("Could not enable Gyro Calibrated");
-//   }
-// #endif
-// }
-
-// void setup() {
-//   Serial.begin(115200);
-//   while (!Serial) delay(10);
-
-//   Serial.println("BNO08x: Angular velocity magnitude from GameRV quaternions");
-
-//   if (!bno08x.begin_I2C()) {
-//     Serial.println("Failed to find BNO08x chip");
-//     while (1) delay(10);
-//   }
-//   Serial.println("BNO08x Found!");
-//   setReports();
-//   Serial.println("Press 'r' to reset previous sample.");
-// }
-
-// void loop() {
-//   // optional reset of previous sample
-//   while (Serial.available()) {
-//     int c = Serial.read();
-//     if (c == 'r' || c == 'R') {
-//       have_prev = false;
-//       Serial.println("State reset.");
-//     }
-//   }
-
-//   if (bno08x.wasReset()) {
-//     Serial.println("Sensor was reset; re-enabling reports");
-//     setReports();
-//     have_prev = false;
-//   }
-
-//   while (bno08x.getSensorEvent(&sensorValue)) {
-//     if (sensorValue.sensorId != SH2_GAME_ROTATION_VECTOR) continue;
-
-//     q_w = sensorValue.un.gameRotationVector.real;
-//     q_x = sensorValue.un.gameRotationVector.i;
-//     q_y = sensorValue.un.gameRotationVector.j;
-//     q_z = sensorValue.un.gameRotationVector.k;
-//     quatNormalize(q_w, q_x, q_y, q_z);
-
-//     uint32_t ts = sensorValue.timestamp;
-//     if (!have_prev) {
-//       qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
-//       ts_prev = ts;
-//       have_prev = true;
-//       continue;
-//     }
-
-//     float dt = dt_from_timestamps(ts, ts_prev);
-//     ts_prev = ts;
-
-//     float wx, wy, wz;
-//     if (omega_from_quats(qpw, qpx, qpy, qpz, q_w, q_x, q_y, q_z, dt, wx, wy, wz)) {
-//       float w_mag = vmag(wx, wy, wz);  // magnitude of angular velocity
-
-//       Serial.print("ω (rad/s): ");
-//       Serial.print(wx, 6); Serial.print(", ");
-//       Serial.print(wy, 6); Serial.print(", ");
-//       Serial.print(wz, 6);
-//       Serial.print(" | |ω| = ");
-//       Serial.println(w_mag, 6);
-//     }
-
-//     // advance previous pose
-//     qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
-//   }
-
-//   delay(2);
-// }
-
+// ===================== IMU + STRUM DETECTION =====================
 #include <Adafruit_BNO08x.h>
 #include <math.h>
 
@@ -182,159 +59,189 @@ sh2_SensorValue_t sensorValue;
 
 const uint16_t REPORT_US = 10000; // ~100 Hz
 
-// --- Strumming detection params (tune these) ---
-static const float   THRESH_ON    = 1.8f;  // rad/s average to turn ON
-static const float   THRESH_OFF   = 1.2f;  // rad/s average to turn OFF (hysteresis)
-static const uint32_t TAU_MS      = 120;   // EMA time constant (~window length)
-static const uint32_t MIN_HOLD_MS = 80;    // min time between state flips
+// ---- Strumming + acceleration thresholds ----
+static const float    THRESH_ON     = 1.5f;
+static const float    THRESH_OFF    = 1.0f;
+static const uint32_t TAU_MS        = 120;
+static const uint32_t MIN_HOLD_MS   = 80;
+static const uint32_t PULSE_MS      = 40;
+static const uint32_t REFRACTORY_MS = 200;
 
-// State
+static const float    A_SPIKE_ABS   = 20.0f;
+static const float    A_SPIKE_REL   = 20.0f;
+static const uint32_t A_TAU_MS      = 80;
+
+// ---- State ----
 static bool     have_prev = false;
 static float    q_w = 1.f, q_x = 0.f, q_y = 0.f, q_z = 0.f;
 static float    qpw = 1.f, qpx = 0.f, qpy = 0.f, qpz = 0.f;
 static uint32_t ts_prev = 0;
 
-static float    w_filt = 0.f;          // filtered |ω|
-static uint8_t  ifStrumming = 0;       // 0/1 output
+static float    w_filt = 0.f;
+static float    a_filt = 0.f;
+static uint8_t  ifStrumming = 0;
+static uint8_t  prevStrumming = 0;
 static uint32_t lastToggleMs = 0;
 
-// --- helpers ---
-static inline float vmag3(float x, float y, float z) {
-  return sqrtf(x*x + y*y + z*z);
-}
-static inline void quatNormalize(float &w, float &x, float &y, float &z) {
+static uint8_t  strumPulse = 0;
+static uint32_t pulseEndMs = 0;
+static uint32_t lastPulseMs = 0;
+
+static inline float vmag3(float x,float y,float z){ return sqrtf(x*x + y*y + z*z); }
+
+static inline void quatNormalize(float &w,float &x,float &y,float &z){
   float n = sqrtf(w*w + x*x + y*y + z*z);
-  if (n > 0.f) { w/=n; x/=n; y/=n; z/=n; }
+  if(n>0.f){ w/=n; x/=n; y/=n; z/=n; }
 }
-static inline void quatConj(float w, float x, float y, float z,
-                            float &cw, float &cx, float &cy, float &cz) {
-  cw =  w; cx = -x; cy = -y; cz = -z;
+static inline void quatConj(float w,float x,float y,float z,float &cw,float &cx,float &cy,float &cz){
+  cw=w; cx=-x; cy=-y; cz=-z;
 }
-static inline void quatMul(float aw, float ax, float ay, float az,
-                           float bw, float bx, float by, float bz,
-                           float &ow, float &ox, float &oy, float &oz) {
+static inline void quatMul(float aw,float ax,float ay,float az,float bw,float bx,float by,float bz,
+                           float &ow,float &ox,float &oy,float &oz){
   ow = aw*bw - ax*bx - ay*by - az*bz;
   ox = aw*bx + ax*bw + ay*bz - az*by;
   oy = aw*by - ax*bz + ay*bw + az*bx;
   oz = aw*bz + ax*by - ay*bx + az*bw;
 }
-static inline float dt_from_timestamps(uint32_t nowTs, uint32_t prevTs) {
+static inline float dt_from_timestamps(uint32_t nowTs, uint32_t prevTs){
   uint32_t d = (nowTs >= prevTs) ? (nowTs - prevTs)
                                  : (0xFFFFFFFFu - prevTs + 1u + nowTs);
   return d * 1e-6f; // seconds
 }
-static bool omega_from_quats(float qpw, float qpx, float qpy, float qpz,
-                             float qnw, float qnx, float qny, float qnz,
-                             float dt, float &wx, float &wy, float &wz) {
-  if (dt <= 0.f) return false;
-
-  float cw, cx, cy, cz; quatConj(qpw, qpx, qpy, qpz, cw, cx, cy, cz);
-  float dw, dx, dy, dz; quatMul(cw, cx, cy, cz, qnw, qnx, qny, qnz, dw, dx, dy, dz);
-  quatNormalize(dw, dx, dy, dz);
-  if (dw < 0.f) { dw = -dw; dx = -dx; dy = -dy; dz = -dz; }
+static bool omega_from_quats(float qpw,float qpx,float qpy,float qpz,
+                             float qnw,float qnx,float qny,float qnz,
+                             float dt,float &wx,float &wy,float &wz){
+  if(dt<=0.f) return false;
+  float cw,cx,cy,cz; quatConj(qpw,qpx,qpy,qpz,cw,cx,cy,cz);
+  float dw,dx,dy,dz; quatMul(cw,cx,cy,cz,qnw,qnx,qny,qnz,dw,dx,dy,dz);
+  quatNormalize(dw,dx,dy,dz);
+  if(dw<0.f){ dw=-dw; dx=-dx; dy=-dy; dz=-dz; }
 
   float half_angle = acosf(fmaxf(-1.f, fminf(1.f, dw)));
-  float sin_half   = sinf(half_angle);
+  float sh         = sinf(half_angle);
   float theta      = 2.f * half_angle;
-  if (theta < 1e-7f || fabsf(sin_half) < 1e-7f) { wx = wy = wz = 0.f; return true; }
+  if(theta < 1e-7f || fabsf(sh) < 1e-7f){ wx=wy=wz=0.f; return true; }
 
-  float ax = dx / sin_half, ay = dy / sin_half, az = dz / sin_half;
-  float rate = theta / dt; // rad/s
+  float ax = dx/sh, ay = dy/sh, az = dz/sh;
+  float rate = theta / dt;
   wx = ax * rate; wy = ay * rate; wz = az * rate;
   return true;
 }
 
-static void setReports() {
-  if (!bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US)) {
-    Serial.println("Could not enable Game Rotation Vector");
+static inline void try_pulse_and_send(uint32_t nowMs){
+  if ((nowMs - lastPulseMs) >= REFRACTORY_MS) {
+    strumPulse  = 1;
+    pulseEndMs  = nowMs + PULSE_MS;
+    lastPulseMs = nowMs;
+    sendBLE(1);
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial) delay(10);
-
-  Serial.println("BNO08x: Strumming detection from |ω| (GameRV)");
-  if (!bno08x.begin_I2C()) {
-    Serial.println("Failed to find BNO08x chip");
-    while (1) delay(10);
-  }
-  Serial.println("BNO08x Found!");
-  setReports();
-
-  Serial.print("Params: THRESH_ON="); Serial.print(THRESH_ON);
-  Serial.print(", THRESH_OFF=");      Serial.print(THRESH_OFF);
-  Serial.print(", TAU_MS=");          Serial.print(TAU_MS);
-  Serial.print(", MIN_HOLD_MS=");     Serial.println(MIN_HOLD_MS);
-}
-
+// ===================== MAIN LOOP =====================
 void loop() {
+  static bool imu_inited = false;
+  if (!imu_inited) {
+    if (!bno08x.begin_I2C()) {
+      Serial.println("Failed to find BNO08x chip");
+      delay(1000);
+      return;
+    }
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US);
+    bno08x.enableReport(SH2_LINEAR_ACCELERATION, REPORT_US);
+    Serial.println("IMU ready");
+    imu_inited = true;
+  }
+
   if (bno08x.wasReset()) {
-    Serial.println("Sensor was reset; re-enabling reports");
-    setReports();
+    Serial.println("Sensor reset; re-enabling reports");
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US);
+    bno08x.enableReport(SH2_LINEAR_ACCELERATION, REPORT_US);
     have_prev = false;
     w_filt = 0.f;
-    ifStrumming = 0;
-    lastToggleMs = millis();
+    a_filt = 0.f;
   }
 
   while (bno08x.getSensorEvent(&sensorValue)) {
-    if (sensorValue.sensorId != SH2_GAME_ROTATION_VECTOR) continue;
-
-    // Read quaternion
-    q_w = sensorValue.un.gameRotationVector.real;
-    q_x = sensorValue.un.gameRotationVector.i;
-    q_y = sensorValue.un.gameRotationVector.j;
-    q_z = sensorValue.un.gameRotationVector.k;
-    quatNormalize(q_w, q_x, q_y, q_z);
-
-    uint32_t ts = sensorValue.timestamp; // µs (sensor clock)
-    if (!have_prev) {
-      qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
-      ts_prev = ts;
-      have_prev = true;
-      continue;
-    }
-
-    float dt = dt_from_timestamps(ts, ts_prev);
-    ts_prev = ts;
-
-    // Get ω from quats
-    float wx, wy, wz;
-    if (!omega_from_quats(qpw, qpx, qpy, qpz, q_w, q_x, q_y, q_z, dt, wx, wy, wz)) {
-      qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
-      continue;
-    }
-
-    // Advance prev quat
-    qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
-
-    float w_mag = vmag3(wx, wy, wz);
-
-    // ---- EMA filter over ~TAU_MS ----
-    // alpha = 1 - exp(-dt/τ), τ in seconds
-    float tau_s = TAU_MS / 1000.0f;
-    float alpha = 1.0f - expf(-dt / fmaxf(1e-6f, tau_s));
-    w_filt += alpha * (w_mag - w_filt);
-
-    // ---- Hysteresis + debounce ----
     uint32_t nowMs = millis();
-    if (ifStrumming == 0) {
-      if (w_filt >= THRESH_ON && (nowMs - lastToggleMs) >= MIN_HOLD_MS) {
-        ifStrumming = 1;
-        lastToggleMs = nowMs;
+
+    if (sensorValue.sensorId == SH2_GAME_ROTATION_VECTOR) {
+      // Angular velocity estimation
+      q_w = sensorValue.un.gameRotationVector.real;
+      q_x = sensorValue.un.gameRotationVector.i;
+      q_y = sensorValue.un.gameRotationVector.j;
+      q_z = sensorValue.un.gameRotationVector.k;
+      quatNormalize(q_w, q_x, q_y, q_z);
+
+      uint32_t ts = sensorValue.timestamp;
+      if (!have_prev) {
+        qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
+        ts_prev = ts;
+        have_prev = true;
+        continue;
       }
-    } else {
-      if (w_filt <= THRESH_OFF && (nowMs - lastToggleMs) >= MIN_HOLD_MS) {
-        ifStrumming = 0;
-        lastToggleMs = nowMs;
+
+      float dt = dt_from_timestamps(ts, ts_prev);
+      ts_prev = ts;
+
+      float wx, wy, wz;
+      if (!omega_from_quats(qpw, qpx, qpy, qpz, q_w, q_x, q_y, q_z, dt, wx, wy, wz)) {
+        qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
+        continue;
       }
+      qpw = q_w; qpx = q_x; qpy = q_y; qpz = q_z;
+
+      float w_mag = vmag3(wx, wy, wz);
+      float tau_s = TAU_MS / 1000.0f;
+      float alpha = 1.0f - expf(-dt / fmaxf(1e-6f, tau_s));
+      w_filt += alpha * (w_mag - w_filt);
+
+      prevStrumming = ifStrumming;
+      if (ifStrumming == 0) {
+        if (w_filt >= THRESH_ON && (nowMs - lastToggleMs) >= MIN_HOLD_MS) {
+          ifStrumming = 1;
+          lastToggleMs = nowMs;
+        }
+      } else {
+        if (w_filt <= THRESH_OFF && (nowMs - lastToggleMs) >= MIN_HOLD_MS) {
+          ifStrumming = 0;
+          lastToggleMs = nowMs;
+        }
+      }
+
+      if (prevStrumming == 0 && ifStrumming == 1) try_pulse_and_send(nowMs);
+      if (strumPulse && nowMs >= pulseEndMs) strumPulse = 0;
+
+      // ✅ Print angular velocity
+      Serial.print("ωx="); Serial.print(wx, 3);
+      Serial.print(" ωy="); Serial.print(wy, 3);
+      Serial.print(" ωz="); Serial.print(wz, 3);
+      Serial.print(" |ω|="); Serial.print(w_mag, 3);
+      Serial.print(" filt_w="); Serial.print(w_filt, 3);
+      Serial.print(" strum="); Serial.println((int)ifStrumming);
     }
 
-    // Output: raw |ω|, filtered, and 0/1 flag
-    Serial.print("|w|=");    Serial.print(w_mag, 4);
-    Serial.print("  filt="); Serial.print(w_filt, 4);
-    Serial.print("  strum=");Serial.println(ifStrumming);
+    else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+      // Linear acceleration
+      float ax = sensorValue.un.linearAcceleration.x;
+      float ay = sensorValue.un.linearAcceleration.y;
+      float az = sensorValue.un.linearAcceleration.z;
+      float a_mag = vmag3(ax, ay, az);
+
+      float alpha_a = 1.0f - expf(-(REPORT_US * 1e-6f) / fmaxf(1e-6f, A_TAU_MS / 1000.0f));
+      a_filt += alpha_a * (a_mag - a_filt);
+
+      bool spike = (a_mag >= A_SPIKE_ABS) || ((a_mag - a_filt) >= A_SPIKE_REL);
+      if (spike) try_pulse_and_send(nowMs);
+      if (strumPulse && nowMs >= pulseEndMs) strumPulse = 0;
+
+      // ✅ Print linear acceleration
+      Serial.print("Ax="); Serial.print(ax, 3);
+      Serial.print(" Ay="); Serial.print(ay, 3);
+      Serial.print(" Az="); Serial.print(az, 3);
+      Serial.print(" |a|="); Serial.print(a_mag, 3);
+      Serial.print(" filt_a="); Serial.print(a_filt, 3);
+      Serial.print(" spike="); Serial.println((int)spike);
+    }
   }
 
   delay(2);
