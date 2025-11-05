@@ -1,18 +1,32 @@
 import asyncio
 from bleak import BleakScanner, BleakClient
+from PyQt5.QtCore import QTimer
 
 SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-TIMEOUT_MS = 50
 
 class BLEReader:
-    def __init__(self, address: str, client: BleakClient):
+    """
+    BLEReader subscribes to a notify-only characteristic.
+    When a notification is received, it sets `event_flag[0] = True`.
+    """
+
+    def __init__(self, address: str, client: BleakClient, event_flag: list):
+        """
+        :param address: BLE device address
+        :param client: BleakClient instance
+        :param event_flag: list containing a single boolean element,
+                           which will be set to True on notification
+        """
         self.address = address
         self.client = client
+        self.event_flag = event_flag
 
-    # 🧩 Async factory method — performs scanning and connection
     @classmethod
-    async def create(cls):
+    async def create(cls, event_flag: list):
+        """
+        Scan, connect, and return BLEReader instance with event_flag pointer.
+        """
         print("🔍 Scanning for BLE devices...")
         devices = await BleakScanner.discover(timeout=6.0)
 
@@ -26,7 +40,7 @@ class BLEReader:
         if not target:
             raise RuntimeError("Could not find XIAO_ESP32S3.")
 
-        print(f"\n Found device: {target.name} [{target.address}]")
+        print(f"\nFound device: {target.name} [{target.address}]")
         print("Connecting...")
 
         client = BleakClient(target.address)
@@ -36,47 +50,35 @@ class BLEReader:
             raise RuntimeError("Failed to connect to ESP32 BLE Server")
 
         print("CONNECTED !!  to ESP32 BLE Server")
-        return cls(target.address, client)
 
-    async def read_characteristic(self):
-        # value = await self.client.read_gatt_char(CHARACTERISTIC_UUID)
-        try:
-            value = await asyncio.wait_for(
-                    self.client.read_gatt_char(CHARACTERISTIC_UUID),
-                    timeout=TIMEOUT_MS / 1000.0
-                )
-        except asyncio.TimeoutError:
-            return None, None
-        except Exception as e:
-            print(f"Error reading characteristic: {e}")
-            return None, None
-        
-        decoded = value.decode('utf-8', errors='ignore')
-        speed_bucket, new_strum = decoded.strip().split(',')
-        print(f"Read value: {decoded}")
-        return speed_bucket, new_strum
+        reader = cls(target.address, client, event_flag)
+        await reader.start_notify()
+        print("awaiting reader")
+        return reader
+
+    async def start_notify(self):
+        """
+        Subscribe to the notify-only characteristic.
+        """
+        await self.client.start_notify(CHARACTERISTIC_UUID, self._notification_handler)
+        print("Subscribed to notifications.")
+
+    def _notification_handler(self, sender: int, data: bytearray):
+        """
+        Called automatically by Bleak when the characteristic notifies.
+        Sets the boolean to True.
+        """
+        decoded = data.decode('utf-8', errors='ignore')
+        QTimer.singleShot(0, lambda: print(f"Notification received from {sender}|||| {decoded}", flush=True))
+        self.event_flag[0] = True
 
     async def disconnect(self):
+        """
+        Stop notifications and disconnect.
+        """
+        try:
+            await self.client.stop_notify(CHARACTERISTIC_UUID)
+        except Exception:
+            pass
         await self.client.disconnect()
         print("Disconnected.")
-
-
-# --- Example usage ---
-# async def main():
-#     try:
-#         ble = await BLEReader.create()  # async constructor
-
-#         await ble.read_characteristic()
-#         await ble.write_characteristic("Hello from macOS 🧠")
-#         await ble.read_characteristic()
-
-#     except Exception as e:
-#         print(f"⚠️ Error: {e}")
-
-#     finally:
-#         if 'ble' in locals():
-#             await ble.disconnect()
-
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
