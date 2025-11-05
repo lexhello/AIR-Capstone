@@ -6,10 +6,11 @@ import numpy as np
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
+import simpleaudio as sa
 import math
 import pygame
 import sys
-from qasync import QEventLoop, run
+from qasync import QEventLoop, asyncSlot
 from PyQt5.QtWidgets import QComboBox
 from receiver import BLEReader
 import asyncio
@@ -67,10 +68,7 @@ class HandApp(QWidget):
         self.cooldown_duration = 1.0
         self.last_detection_time = 0
         self.ble = None
-
         
-    async def init_audio(self):
-        print("in init function")
         try:
             self.sound = sa.WaveObject.from_wave_file("beep.wav")
         except Exception:
@@ -187,8 +185,6 @@ class HandApp(QWidget):
 
 
     async def update_frame(self):
-        
-        print("starting update_frame")
         ret, frame = self.cap.read()
         if not ret:
             return
@@ -339,12 +335,14 @@ async def main():
     asyncio.set_event_loop(loop)
     
     win = HandApp()
-    win.show()
     await win.init_ble()
-    await win.init_audio()
+    win.show()
+    with loop:
+        loop.run_forever()
+
 
 
 if __name__ == "__main__":
-    run(main())
+    asyncio.run(main())
     
     
