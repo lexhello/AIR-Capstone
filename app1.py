@@ -227,6 +227,7 @@ class HandApp(QWidget):
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Bent", "Bent", "Bent"], ["c4", "e4", "g4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Straight", "Bent", "Bent"], ["d4", "f4", "a4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Straight", "Straight", "Bent"], ["e4", "g4", "b4"]),
+                    (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Bent", "Straight", "Straight", "Straight"], ["e4", "g4", "b4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Straight", "Straight", "Straight"], ["f4", "a4", "c5"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Straight", "Straight", "Straight", "Straight"], ["g4", "b4", "d4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Bent", "Bent", "Bent", "Bent"], ["a4", "c5"]),
