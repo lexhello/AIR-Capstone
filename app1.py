@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QComboBox, QSlider
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QComboBox, QSlider, QSizePolicy
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from bleak import BleakScanner, BleakClient
 import simpleaudio as sa
@@ -43,7 +43,8 @@ class HandApp(QWidget):
         # UI elements
         self.video_label = QLabel()
         self.video_label.setAlignment(Qt.AlignCenter)
-        self.video_label.setFixedSize(640, 480)
+        # self.video_label.setFixedSize(640, 480)
+        self.video_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.status_label = QLabel("Finger Status: None")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -349,8 +350,8 @@ if __name__ == "__main__":
             win.handle_ble_notification("1")
             await asyncio.sleep(1)
         
-    # loop.create_task(setup())
-    loop.create_task(testing())
+    loop.create_task(setup())
+    # loop.create_task(testing())
     win.show()
     
     with loop:
