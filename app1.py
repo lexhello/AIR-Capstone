@@ -49,8 +49,11 @@ class HandApp(QWidget):
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 16px; color: white; background-color: #333; padding: 6px;")
 
-        self.button = QPushButton("Start Camera")
-        self.button.clicked.connect(self.toggle_camera)
+        self.Camera_button = QPushButton("Start Camera")
+        self.Camera_button.clicked.connect(self.toggle_camera)
+        
+        self.Overlap_sounds_button = QPushButton("Overlap Sounds")
+        self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
 
         self.mode_dropdown = QComboBox()
         self.mode_dropdown.addItems(["normal", "lisa"])
@@ -59,7 +62,8 @@ class HandApp(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(self.video_label)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.button)
+        layout.addWidget(self.Camera_button)
+        layout.addWidget(self.Overlap_sounds_button)
         layout.addWidget(self.mode_dropdown)
         self.setLayout(layout)
 
@@ -71,6 +75,7 @@ class HandApp(QWidget):
         self.selected_notes = set()
         self.currently_playing = set()
         self.new_strum_flag = [False]  # <- mutable boolean
+        self.sound_overlapping = False
 
         # Audio
         try:
@@ -164,11 +169,19 @@ class HandApp(QWidget):
             self.timer.stop()
             if self.cap:
                 self.cap.release()
-            self.button.setText("Start Camera")
+            self.Camera_button.setText("Start Camera")
         else:
             self.cap = cv2.VideoCapture(0)
             self.timer.start(30)
-            self.button.setText("Stop Camera")
+            self.Camera_button.setText("Stop Camera")
+    
+    def overlap_sounds(self):
+        if not self.sound_overlapping:
+            self.Overlap_sounds_button.setText("press to overlap sounds")
+            self.sound_overlapping = True
+        else:
+            self.sound_overlapping = False
+            self.Overlap_sounds_button.setText("press to stop overlapping sounds")
 
     def on_dropdown_change(self, index):
         selected_mode = self.mode_dropdown.currentText()
@@ -251,8 +264,9 @@ class HandApp(QWidget):
                 to_stop = self.active_notes
 
                 # Stop notes
-                for note in to_stop:
-                    getattr(self, note).stop()
+                if not self.sound_overlapping:
+                    for note in to_stop:
+                        getattr(self, note).stop()
                 # Play notes
                 for note in to_start:
                     getattr(self, note).play()

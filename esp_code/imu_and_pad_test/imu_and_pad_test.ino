@@ -1,202 +1,248 @@
-#include <Wire.h>
 #include <Adafruit_BNO08x.h>
-#include <Trill.h>
 #include <math.h>
-#include <NimBLEDevice.h>
 
-// -------------------- BLE UART Setup --------------------
-NimBLEServer* pServer = nullptr;
-NimBLECharacteristic* pCharacteristic = nullptr;
-bool deviceConnected = false;
+// ---- BLE ----
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
 
-class MyServerCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
-    Serial.println("Client connected");
-  }
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-  void onDisconnect(NimBLEServer* pServer) {
-    Serial.println("Client disconnected");
-  }
-};
+BLECharacteristic *pCharacteristic = nullptr;
 
-// -------------------- BNO08x setup --------------------
+// ---- IMU ----
 #define BNO08X_CS    10
 #define BNO08X_INT   9
 #define BNO08X_RESET -1
 
 Adafruit_BNO08x bno08x(BNO08X_RESET);
 sh2_SensorValue_t sensorValue;
-bool bno_ok = false;
 
-// -------------------- Trill setup ---------------------
-Trill trillSensor;
-bool trillTouchActive = false;
-bool trill_ok = false;
-bool useTrillSensor = false;
+const uint16_t REPORT_US = 10000; // ~100 Hz
 
-// -------------------- Timers --------------------------
-const uint16_t BNO_PERIOD_MS   = 10;   // ~100 Hz
-const uint16_t TRILL_PERIOD_MS = 50;   // ~20 Hz
-unsigned long nextBNO   = 0;
-unsigned long nextTrill = 0;
+// ---- Strumming detection (tune these) ----
+static const float    THRESH_ON     = 2.0f;   // rad/s average to turn ON
+static const float    THRESH_OFF    = 1.2f;   // rad/s average to turn OFF
+static const uint32_t TAU_MS        = 120;    // EMA time constant
+static const uint32_t MIN_HOLD_MS   = 80;     // min time between state flips
+static const uint32_t PULSE_MS      = 40;     // pulse width (ms)
+static const uint32_t REFRACTORY_MS = 200;    // lockout after a pulse
 
-// -------------------- Motion detection -----------------
-float prevVx = 0, prevVy = 0;
-float speed = 0;
-float strumThreshold = 2.0;
-unsigned long lastStrumTime = 0;      
-const unsigned long strumCooldown = 100; // ms
+// ---- State ----
+static bool     have_prev = false;
+static float    q_w = 1.f, q_x = 0.f, q_y = 0.f, q_z = 0.f;
+static float    qpw = 1.f, qpx = 0.f, qpy = 0.f, qpz = 0.f;
+static uint32_t ts_prev = 0;
 
-// -------------------- Mode control --------------------
-// 0 -> BNO only, 1 -> TRILL only
-volatile uint8_t mode = 0;
+static float    w_filt = 0.f;          // filtered |ω|
+static uint8_t  ifStrumming = 0;       // latched state (0/1)
+static uint8_t  prevStrumming = 0;
+static uint32_t lastToggleMs = 0;
 
-void setBNOReports() {
-  bno08x.enableReport(SH2_LINEAR_ACCELERATION);
+// Pulse one-shot + refractory
+static uint8_t  strumPulse = 0;        // 1 while pulse is active
+static uint32_t pulseEndMs = 0;
+static uint32_t lastPulseMs = 0;
+static uint8_t  lastSentPulse = 255;   // force first send
+
+// ========== Helpers ==========
+static inline float vmag3(float x, float y, float z){ return sqrtf(x*x + y*y + z*z); }
+
+static inline void quatNormalize(float &w, float &x, float &y, float &z){
+  float n = sqrtf(w*w + x*x + y*y + z*z); if(n>0.f){ w/=n; x/=n; y/=n; z/=n; }
+}
+static inline void quatConj(float w,float x,float y,float z,float &cw,float &cx,float &cy,float &cz){
+  cw=w; cx=-x; cy=-y; cz=-z;
+}
+static inline void quatMul(float aw,float ax,float ay,float az,float bw,float bx,float by,float bz,
+                            float &ow,float &ox,float &oy,float &oz){
+  ow = aw*bw - ax*bx - ay*by - az*bz;
+  ox = aw*bx + ax*bw + ay*bz - az*by;
+  oy = aw*by - ax*bz + ay*bw + az*bx;
+  oz = aw*bz + ax*by - ay*bx + az*bw;
+}
+static inline float dt_from_timestamps(uint32_t nowTs, uint32_t prevTs){
+  uint32_t d = (nowTs >= prevTs) ? (nowTs - prevTs) : (0xFFFFFFFFu - prevTs + 1u + nowTs);
+  return d * 1e-6f;
+}
+static bool omega_from_quats(float qpw,float qpx,float qpy,float qpz,
+                             float qnw,float qnx,float qny,float qnz,
+                             float dt,float &wx,float &wy,float &wz){
+  if(dt<=0.f) return false;
+  float cw,cx,cy,cz; quatConj(qpw,qpx,qpy,qpz,cw,cx,cy,cz);
+  float dw,dx,dy,dz; quatMul(cw,cx,cy,cz,qnw,qnx,qny,qnz,dw,dx,dy,dz);
+  quatNormalize(dw,dx,dy,dz);
+  if(dw<0.f){ dw=-dw; dx=-dx; dy=-dy; dz=-dz; }
+  float half_angle = acosf(fmaxf(-1.f, fminf(1.f, dw)));
+  float sh = sinf(half_angle);
+  float theta = 2.f*half_angle;
+  if(theta<1e-7f || fabsf(sh)<1e-7f){ wx=wy=wz=0.f; return true; }
+  float ax = dx/sh, ay = dy/sh, az = dz/sh;
+  float rate = theta/dt; // rad/s
+  wx = ax*rate; wy = ay*rate; wz = az*rate;
+  return true;
 }
 
-void handleSerialMode() {
-  while (Serial.available()) {
-    int c = Serial.read();
-    if (c == '0') mode = 0;
-    else if (c == '1') mode = 1;
-  }
+// ========== BLE send ==========
+void sendBLE(uint8_t new_strumPulse){
+  if(!pCharacteristic) return;
+  // Send as a tiny string: "P:0" or "P:1" (easy to debug on phone)
+  char buf[8];
+  snprintf(buf, sizeof(buf), "P:%d", (int)new_strumPulse);
+  pCharacteristic->setValue((uint8_t*)buf, strlen(buf));
+  pCharacteristic->notify();
+
+  Serial.print("📤 BLE notify -> "); Serial.println(buf);
 }
 
-// Send over BLE UART
-void sendBLE(float speed, bool motionEvent, String trillStr) {
-  Serial.print(".");
-  // snprintf("pcharacteristic: %p\n", pCharacteristic);
-  if(deviceConnected && pCharacteristic != nullptr) {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "Speed:%.3f,Motion:%d,Trill:%s", speed, motionEvent ? 1 : 0, trillStr.c_str());
-    pCharacteristic->setValue(buf);
-    pCharacteristic->notify();
-  }
-}
-
+// ========== Setup ==========
 void setup() {
   Serial.begin(115200);
-  Wire.begin();
-  delay(1000); // give time to open serial monitor
+  while(!Serial) delay(10);
 
-  // ---- BLE UART init ----
-  NimBLEDevice::init("ESP32_IMU");
-  pServer = NimBLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-  
-  NimBLEService* pService = pServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+  Serial.println("BNO08x + BLE: |ω| strum pulse notifications");
 
-  NimBLECharacteristic* pTxCharacteristic = pService->createCharacteristic(
-    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
-    NIMBLE_PROPERTY::NOTIFY
+  // --- IMU init ---
+  if(!bno08x.begin_I2C()){
+    Serial.println("Failed to find BNO08x chip");
+    while(1) delay(10);
+  }
+  Serial.println("BNO08x Found!");
+  if(!bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US)){
+    Serial.println("Could not enable Game Rotation Vector");
+  }
+
+  // --- BLE init ---
+  BLEDevice::init("XIAO_ESP32S3");
+  BLEServer *pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+  pCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_NOTIFY |   // important for notify()
+    BLECharacteristic::PROPERTY_WRITE
   );
-
-  NimBLECharacteristic* pRxCharacteristic = pService->createCharacteristic(
-    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
-    NIMBLE_PROPERTY::WRITE
-  );
-
+  // 0x2902 descriptor so central (esp. iOS) can enable notifications
+  pCharacteristic->addDescriptor(new BLE2902());
+  pCharacteristic->setValue("P:0");
   pService->start();
-  NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(pService->getUUID());
-  pAdvertising->start();
-  Serial.println("BLE UART ready, waiting for connection...");
 
-  // ---- BNO08x init ----
-  if (bno08x.begin_I2C()) {
-    bno_ok = true;
-    setBNOReports();
-  }
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
 
-  if (useTrillSensor) {
-    // ---- Trill init ----
-    int ret = trillSensor.setup(Trill::TRILL_FLEX);
-    if (ret == 0) {
-      trill_ok = true;
-      trillSensor.setMode(Trill::CENTROID);
-      delay(10);
-      trillSensor.setPrescaler(3);
-      delay(10);
-      trillSensor.setNoiseThreshold(200);
-      delay(10);
-      trillSensor.updateBaseline();
-    }
-  }
-  
+  Serial.println("✅ Advertising started!");
+  Serial.println(BLEDevice::getAddress().toString().c_str());
 
-  // Fallback mode
-  if (mode == 0 && !bno_ok && trill_ok) mode = 1;
-  if (mode == 1 && !trill_ok && bno_ok) mode = 0;
+  Serial.println("BLE ready. Notifying P:0 on strum pulses.");
 }
 
+// ========== Main loop ==========
 void loop() {
-  unsigned long now = millis();
-  handleSerialMode();
-
-  String trillData = "0.00:0.00";
-
-  // ---- Trill ----
-  // if (useTrillSensor) {
-
-  //   if (trill_ok && now >= nextTrill) {
-  //     trillSensor.read();
-  //     if (trillSensor.getNumTouches() > 0) {
-  //       trillData = "";
-  //       for (int i = 0; i < trillSensor.getNumTouches(); i++) {
-  //         if (i) trillData += ",";
-  //         trillData += String(trillSensor.touchLocation(i), 2);
-  //         trillData += ":";
-  //         trillData += String(trillSensor.touchSize(i), 2);
-  //       }
-  //       trillTouchActive = true;
-  //     } else {
-  //       trillTouchActive = false;
-  //     }
-  //     nextTrill = now + TRILL_PERIOD_MS;
-  //   }
-
-  // }
-  
-
-  // ---- BNO08x ----
-  if (bno_ok && now >= nextBNO) {
-      while (bno08x.getSensorEvent(&sensorValue)) {
-          if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
-              float ax = sensorValue.un.linearAcceleration.x;
-              float ay = sensorValue.un.linearAcceleration.y;
-              float az = sensorValue.un.linearAcceleration.z;
-
-              float dt = BNO_PERIOD_MS / 1000.0;
-              float vx = prevVx + ax * dt;
-              float vy = prevVy + ay * dt;
-              speed = sqrt(vx*vx + vy*vy);
-
-              // detect strum (acceleration spike)
-              bool motionEvent = false;
-              float a_mag = sqrt(ax*ax + ay*ay + az*az);
-              if (a_mag > strumThreshold && (millis() - lastStrumTime) > strumCooldown) {
-                  motionEvent = true;
-                  lastStrumTime = millis();
-              }
-
-              prevVx = vx;
-              prevVy = vy;
-
-              // Send BLE
-              sendBLE(speed, motionEvent, trillData);
-
-              // Local print
-              Serial.print("Speed: ");
-              Serial.print(speed, 3);
-              Serial.print(" m/s, Motion: ");
-              Serial.print(motionEvent ? "YES" : "NO");
-              Serial.print(", TRILL: ");
-              Serial.println(trillData);
-          }
-      }
-      nextBNO = now + BNO_PERIOD_MS;
+  // Optional manual reset with 'r'
+  while(Serial.available()){
+    int c = Serial.read();
+    if(c=='r'||c=='R'){
+      have_prev=false;
+      w_filt=0.f;
+      ifStrumming=prevStrumming=strumPulse=0;
+      lastSentPulse = 255;
+      Serial.println("State reset.");
+    }
   }
 
+  if(bno08x.wasReset()){
+    Serial.println("Sensor reset; re-enabling GRV");
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, REPORT_US);
+    have_prev=false;
+    w_filt=0.f;
+    ifStrumming=prevStrumming=strumPulse=0;
+    lastSentPulse = 255;
+  }
 
+  // Drain IMU events
+  while(bno08x.getSensorEvent(&sensorValue)){
+    if(sensorValue.sensorId != SH2_GAME_ROTATION_VECTOR) continue;
+
+    // Read quaternion
+    q_w = sensorValue.un.gameRotationVector.real;
+    q_x = sensorValue.un.gameRotationVector.i;
+    q_y = sensorValue.un.gameRotationVector.j;
+    q_z = sensorValue.un.gameRotationVector.k;
+    quatNormalize(q_w,q_x,q_y,q_z);
+
+    uint32_t ts = sensorValue.timestamp; // µs
+    if(!have_prev){
+      qpw=q_w; qpx=q_x; qpy=q_y; qpz=q_z;
+      ts_prev=ts; have_prev=true; continue;
+    }
+
+    float dt = dt_from_timestamps(ts, ts_prev);
+    ts_prev = ts;
+
+    // ω from quaternion delta
+    float wx,wy,wz;
+    if(!omega_from_quats(qpw,qpx,qpy,qpz,q_w,q_x,q_y,q_z,dt,wx,wy,wz)){
+      qpw=q_w; qpx=q_x; qpy=q_y; qpz=q_z;
+      continue;
+    }
+    qpw=q_w; qpx=q_x; qpy=q_y; qpz=q_z;
+
+    float w_mag = vmag3(wx,wy,wz);
+
+    // EMA smoothing over TAU_MS
+    float tau_s = TAU_MS/1000.0f;
+    float alpha = 1.0f - expf(-dt / fmaxf(1e-6f, tau_s));
+    w_filt += alpha * (w_mag - w_filt);
+
+    // Hysteresis state + debounce
+    prevStrumming = ifStrumming;
+    uint32_t nowMs = millis();
+
+    if(ifStrumming==0){
+      if(w_filt >= THRESH_ON && (nowMs - lastToggleMs) >= MIN_HOLD_MS){
+        ifStrumming = 1;
+        lastToggleMs = nowMs;
+      }
+    } else {
+      if(w_filt <= THRESH_OFF && (nowMs - lastToggleMs) >= MIN_HOLD_MS){
+        ifStrumming = 0;
+        lastToggleMs = nowMs;
+      }
+    }
+
+    // One-shot pulse on rising edge with refractory window
+    if (prevStrumming == 0 && ifStrumming == 1) {
+      if ((nowMs - lastPulseMs) >= REFRACTORY_MS) {
+        strumPulse  = 1;
+        pulseEndMs  = nowMs + PULSE_MS;
+        lastPulseMs = nowMs;
+
+        // ✅ Send BLE only when pulse goes HIGH
+        sendBLE(1);
+        lastSentPulse = 1;
+      }
+    }
+
+    // End pulse when time elapses (no BLE send on falling edge)
+    if (strumPulse && nowMs >= pulseEndMs) {
+      strumPulse = 0;
+      lastSentPulse = 0;   // reset so next rising edge can notify again
+    }
+
+
+
+    // Debug line
+    // Serial.print("|w|="); Serial.print(w_mag,3);
+    // Serial.print(" filt="); Serial.print(w_filt,3);
+    // Serial.print(" strum="); Serial.print((int)ifStrumming);
+    // Serial.print(" pulse="); Serial.println((int)strumPulse);
+  }
+
+  delay(2);
 }
