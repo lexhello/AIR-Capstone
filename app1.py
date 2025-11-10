@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QComboBox
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QComboBox, QSlider
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from bleak import BleakScanner, BleakClient
 import simpleaudio as sa
@@ -59,12 +59,31 @@ class HandApp(QWidget):
         self.mode_dropdown.addItems(["normal", "lisa"])
         self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
 
+        self.value_slider = QSlider(Qt.Horizontal)
+        self.value_slider.setMinimum(1)
+        self.value_slider.setMaximum(5)
+        self.value_slider.setValue(3)  # default value
+        self.value_slider.setTickPosition(QSlider.TicksBelow)
+        self.value_slider.setTickInterval(1)
+
+        # Label to show current value
+        self.slider_label = QLabel(f"Selected Delay Value: {self.value_slider.value()}")
+        self.slider_label.setAlignment(Qt.AlignCenter)
+        self.slider_label.setStyleSheet("font-size: 14px; color: white; background-color: #555; padding: 4px;")
+
+        # Connect slider movement to update the label
+        self.value_slider.valueChanged.connect(lambda val: self.slider_label.setText(f"Selected Delay Value: {val}"))
+
+
         layout = QVBoxLayout()
         layout.addWidget(self.video_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.Camera_button)
         layout.addWidget(self.Overlap_sounds_button)
         layout.addWidget(self.mode_dropdown)
+        # Add slider and label to your layout
+        layout.addWidget(self.slider_label)
+        layout.addWidget(self.value_slider)
         self.setLayout(layout)
 
         # State
@@ -116,6 +135,15 @@ class HandApp(QWidget):
                 self.a4 = pygame.mixer.Sound("static/audio/lisa-f4.mp3")
                 self.b4 = pygame.mixer.Sound("static/audio/lisa-g4.mp3")
                 self.c5 = pygame.mixer.Sound("static/audio/lisa-a4.mp3")
+            elif mode == "guitar":
+                self.c3 = pygame.mixer.Sound("static/audio/guitar-c3.mp3")
+                self.d4 = pygame.mixer.Sound("static/audio/guitar-d3.mp3")
+                self.e4 = pygame.mixer.Sound("static/audio/guitar-e4.mp3")
+                self.f4 = pygame.mixer.Sound("static/audio/guitar-f4.mp3")
+                self.g4 = pygame.mixer.Sound("static/audio/guitar-g4.mp3")
+                self.a4 = pygame.mixer.Sound("static/audio/guitar-a4.mp3")
+                self.b4 = pygame.mixer.Sound("static/audio/guitar-b4.mp3")
+                self.c4 = pygame.mixer.Sound("static/audio/guitar-c4.mp3")
             print(f"{mode} audio files loaded successfully.")
         except Exception as e:
             print("Error loading audio:", e)
@@ -215,6 +243,13 @@ class HandApp(QWidget):
 
         return finger_states
 
+    async def play_notes_with_delay(self, to_start):
+        for note in to_start:
+            selected_value = self.value_slider.value()
+            ms_delay = ((selected_value-1)*7)/1000.0
+            await asyncio.sleep(ms_delay)
+            getattr(self, note).play()
+        
     async def update_frame(self):
         if self.cap is None:
             return
@@ -250,14 +285,17 @@ class HandApp(QWidget):
                         self.selected_notes.update(notes)
                         #self.currently_playing.update(notes)
                         break
-
+                
+                to_stop = set()
+                
                 # Check BLE event flag
                 if self.new_strum_flag[0]:
+                    to_stop = self.active_notes
                     self.currently_playing = self.selected_notes.copy()
                     self.active_notes = self.currently_playing.copy()
                     print("reset")
                     self.new_strum_flag[0] = False  # reset flag
-                    to_stop = self.active_notes
+                    
 
                 # to_stop = self.active_notes - self.currently_playing
                 # to_start = self.currently_playing - self.active_notes
@@ -270,8 +308,9 @@ class HandApp(QWidget):
                         print("STOP")
                         getattr(self, note).stop()
                 # Play notes
-                for note in to_start:
-                    getattr(self, note).play()
+                
+                if to_start:
+                    asyncio.create_task(self.play_notes_with_delay(to_start))
 
                 self.currently_playing = set()
                 self.selected_notes = set()
@@ -311,7 +350,7 @@ if __name__ == "__main__":
             await asyncio.sleep(1)
         
     loop.create_task(setup())
-    loop.create_task(testing())
+    # loop.create_task(testing())
     win.show()
     
     with loop:
