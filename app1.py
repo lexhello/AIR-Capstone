@@ -162,7 +162,6 @@ class HandApp(QWidget):
         print(f"Notification received from {sender}|||| {decoded}", flush=True)
         
         self.ble_notification_signal.emit(decoded)
-        # self.new_strum_flag[0] = True
 
     def toggle_camera(self):
         if self.timer.isActive():
@@ -254,8 +253,9 @@ class HandApp(QWidget):
 
                 # Check BLE event flag
                 if self.new_strum_flag[0]:
-                    self.active_notes = self.currently_playing.copy()
                     self.currently_playing = self.selected_notes.copy()
+                    self.active_notes = self.currently_playing.copy()
+                    print("reset")
                     self.new_strum_flag[0] = False  # reset flag
 
                 # to_stop = self.active_notes - self.currently_playing
@@ -267,6 +267,7 @@ class HandApp(QWidget):
                 # Stop notes
                 if not self.sound_overlapping:
                     for note in to_stop:
+                        print("STOP")
                         getattr(self, note).stop()
                 # Play notes
                 for note in to_start:
@@ -303,7 +304,13 @@ if __name__ == "__main__":
         await win.init_ble()
         print("BLE initialized and notifications handler created")
     
+    async def testing():
+        while True:
+            win.handle_ble_notification("1")
+            await asyncio.sleep(1)
+        
     loop.create_task(setup())
+    loop.create_task(testing())
     win.show()
     
     with loop:
