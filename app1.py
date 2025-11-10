@@ -56,7 +56,7 @@ class HandApp(QWidget):
         self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
 
         self.mode_dropdown = QComboBox()
-        self.mode_dropdown.addItems(["normal", "lisa"])
+        self.mode_dropdown.addItems(["normal", "lisa", "guitar"])
         self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
 
         self.value_slider = QSlider(Qt.Horizontal)
@@ -136,14 +136,15 @@ class HandApp(QWidget):
                 self.b4 = pygame.mixer.Sound("static/audio/lisa-g4.mp3")
                 self.c5 = pygame.mixer.Sound("static/audio/lisa-a4.mp3")
             elif mode == "guitar":
-                self.c3 = pygame.mixer.Sound("static/audio/guitar-c3.mp3")
-                self.d4 = pygame.mixer.Sound("static/audio/guitar-d3.mp3")
-                self.e4 = pygame.mixer.Sound("static/audio/guitar-e4.mp3")
-                self.f4 = pygame.mixer.Sound("static/audio/guitar-f4.mp3")
-                self.g4 = pygame.mixer.Sound("static/audio/guitar-g4.mp3")
-                self.a4 = pygame.mixer.Sound("static/audio/guitar-a4.mp3")
-                self.b4 = pygame.mixer.Sound("static/audio/guitar-b4.mp3")
-                self.c4 = pygame.mixer.Sound("static/audio/guitar-c4.mp3")
+                print("Loading guitar audio files...")
+                self.c4 = pygame.mixer.Sound("static/audio/guitar-c3.wav")
+                self.d4 = pygame.mixer.Sound("static/audio/guitar-d4.wav")
+                self.e4 = pygame.mixer.Sound("static/audio/guitar-e4.wav")
+                self.f4 = pygame.mixer.Sound("static/audio/guitar-f4.wav")
+                self.g4 = pygame.mixer.Sound("static/audio/guitar-g4.wav")
+                self.a4 = pygame.mixer.Sound("static/audio/guitar-a4.wav")
+                self.b4 = pygame.mixer.Sound("static/audio/guitar-b4.wav")
+                self.c5 = pygame.mixer.Sound("static/audio/guitar-c4.wav")
             print(f"{mode} audio files loaded successfully.")
         except Exception as e:
             print("Error loading audio:", e)
@@ -305,7 +306,6 @@ class HandApp(QWidget):
                 # Stop notes
                 if not self.sound_overlapping:
                     for note in to_stop:
-                        print("STOP")
                         getattr(self, note).stop()
                 # Play notes
                 
@@ -349,8 +349,8 @@ if __name__ == "__main__":
             win.handle_ble_notification("1")
             await asyncio.sleep(1)
         
-    loop.create_task(setup())
-    # loop.create_task(testing())
+    # loop.create_task(setup())
+    loop.create_task(testing())
     win.show()
     
     with loop:
