@@ -176,11 +176,11 @@ class HandApp(QWidget):
     
     def overlap_sounds(self):
         if not self.sound_overlapping:
-            self.Overlap_sounds_button.setText("press to overlap sounds")
+            self.Overlap_sounds_button.setText("sound overlapping is True")
             self.sound_overlapping = True
         else:
             self.sound_overlapping = False
-            self.Overlap_sounds_button.setText("press to stop overlapping sounds")
+            self.Overlap_sounds_button.setText("sound overlapping is False")
 
     def on_dropdown_change(self, index):
         selected_mode = self.mode_dropdown.currentText()
@@ -257,12 +257,12 @@ class HandApp(QWidget):
                     self.active_notes = self.currently_playing.copy()
                     print("reset")
                     self.new_strum_flag[0] = False  # reset flag
+                    to_stop = self.active_notes
 
                 # to_stop = self.active_notes - self.currently_playing
                 # to_start = self.currently_playing - self.active_notes
                 
                 to_start = self.currently_playing
-                to_stop = self.active_notes
 
                 # Stop notes
                 if not self.sound_overlapping:
@@ -275,6 +275,7 @@ class HandApp(QWidget):
 
                 self.currently_playing = set()
                 self.selected_notes = set()
+                
 
         self.status_label.setText(f"Finger Status: {finger_text}")
 
