@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QComboBox, QSlider, QSizePolicy
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QComboBox, QSlider, QSizePolicy
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from bleak import BleakScanner, BleakClient
 import simpleaudio as sa
@@ -50,15 +50,72 @@ class HandApp(QWidget):
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 16px; color: white; background-color: #333; padding: 6px;")
 
-        self.Camera_button = QPushButton("Start Camera")
+        self.Camera_button = QPushButton("Start\nCamera")
         self.Camera_button.clicked.connect(self.toggle_camera)
-        
-        self.Overlap_sounds_button = QPushButton("Overlap Sounds")
+        self.Camera_button.setFixedSize(120, 120)
+        self.Camera_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+        """)
+
+        self.Overlap_sounds_button = QPushButton("Overlap\nOFF")
         self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
+        self.Overlap_sounds_button.setFixedSize(120, 120)
+        self.Overlap_sounds_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
 
         self.mode_dropdown = QComboBox()
         self.mode_dropdown.addItems(["normal", "lisa", "guitar"])
         self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
+        self.mode_dropdown.setFixedWidth(120)
+        self.mode_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QComboBox:hover {
+                background-color: #7B1FA2;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #9C27B0;
+                color: white;
+                selection-background-color: #7B1FA2;
+            }
+        """)
 
         self.value_slider = QSlider(Qt.Horizontal)
         self.value_slider.setMinimum(1)
@@ -66,26 +123,61 @@ class HandApp(QWidget):
         self.value_slider.setValue(3)  # default value
         self.value_slider.setTickPosition(QSlider.TicksBelow)
         self.value_slider.setTickInterval(1)
+        self.value_slider.setFixedWidth(120)
+        self.value_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #ddd;
+                height: 8px;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #FF5722;
+                border: none;
+                width: 20px;
+                height: 20px;
+                margin: -6px 0;
+                border-radius: 10px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #E64A19;
+            }
+            QSlider::sub-page:horizontal {
+                background: #FF9800;
+                border-radius: 4px;
+            }
+        """)
 
         # Label to show current value
-        self.slider_label = QLabel(f"Selected Delay Value: {self.value_slider.value()}")
+        self.slider_label = QLabel(f"Delay: {self.value_slider.value()}")
         self.slider_label.setAlignment(Qt.AlignCenter)
-        self.slider_label.setStyleSheet("font-size: 14px; color: white; background-color: #555; padding: 4px;")
+        self.slider_label.setFixedWidth(120)
+        self.slider_label.setStyleSheet("font-size: 12px; color: white; background-color: #555; padding: 4px; border-radius: 5px;")
 
         # Connect slider movement to update the label
-        self.value_slider.valueChanged.connect(lambda val: self.slider_label.setText(f"Selected Delay Value: {val}"))
+        self.value_slider.valueChanged.connect(lambda val: self.slider_label.setText(f"Delay: {val}"))
 
+        # Layout setup - controls on left, video on right
+        main_layout = QHBoxLayout()
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.video_label)
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.Camera_button)
-        layout.addWidget(self.Overlap_sounds_button)
-        layout.addWidget(self.mode_dropdown)
-        # Add slider and label to your layout
-        layout.addWidget(self.slider_label)
-        layout.addWidget(self.value_slider)
-        self.setLayout(layout)
+        # Left side - vertical layout for controls
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(self.Camera_button)
+        left_layout.addWidget(self.Overlap_sounds_button)
+        left_layout.addWidget(self.mode_dropdown)
+        left_layout.addWidget(self.slider_label)
+        left_layout.addWidget(self.value_slider)
+        left_layout.addStretch()  # Push buttons to top
+
+        # Right side - vertical layout for video and status
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.video_label)
+        right_layout.addWidget(self.status_label)
+
+        # Add left and right layouts to main layout
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
+
+        self.setLayout(main_layout)
 
         # State
         self.cap = None
@@ -198,19 +290,19 @@ class HandApp(QWidget):
             self.timer.stop()
             if self.cap:
                 self.cap.release()
-            self.Camera_button.setText("Start Camera")
+            self.Camera_button.setText("Start\nCamera")
         else:
             self.cap = cv2.VideoCapture(0)
             self.timer.start(30)
-            self.Camera_button.setText("Stop Camera")
+            self.Camera_button.setText("Stop\nCamera")
     
     def overlap_sounds(self):
         if not self.sound_overlapping:
-            self.Overlap_sounds_button.setText("sound overlapping is True")
+            self.Overlap_sounds_button.setText("Overlap\nON")
             self.sound_overlapping = True
         else:
             self.sound_overlapping = False
-            self.Overlap_sounds_button.setText("sound overlapping is False")
+            self.Overlap_sounds_button.setText("Overlap\nOFF")
 
     def on_dropdown_change(self, index):
         selected_mode = self.mode_dropdown.currentText()
@@ -250,6 +342,7 @@ class HandApp(QWidget):
             selected_value = self.value_slider.value()
             ms_delay = ((selected_value-1)*7)/1000.0
             await asyncio.sleep(ms_delay)
+            getattr(self, note).stop()
             getattr(self, note).play()
         
     async def update_frame(self):
@@ -350,8 +443,8 @@ if __name__ == "__main__":
             win.handle_ble_notification("1")
             await asyncio.sleep(1)
         
-    loop.create_task(setup())
-    # loop.create_task(testing())
+    # loop.create_task(setup())
+    loop.create_task(testing())
     win.show()
     
     with loop:
