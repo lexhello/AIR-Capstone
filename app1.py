@@ -116,6 +116,25 @@ class HandApp(QWidget):
                 selection-background-color: #7B1FA2;
             }
         """)
+        self.velocity_button = QPushButton("Slider\nMode")
+        self.velocity_button.clicked.connect(self.toggle_velocity)
+        self.velocity_button.setFixedSize(120, 120)
+        self.velocity_button.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                border-radius: 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:pressed {
+                background-color: #E65100;
+            }
+        """)
 
         self.value_slider = QSlider(Qt.Horizontal)
         self.value_slider.setMinimum(1)
@@ -163,6 +182,7 @@ class HandApp(QWidget):
         left_layout = QVBoxLayout()
         left_layout.addWidget(self.Camera_button)
         left_layout.addWidget(self.Overlap_sounds_button)
+        left_layout.addWidget(self.velocity_button)
         left_layout.addWidget(self.mode_dropdown)
         left_layout.addWidget(self.slider_label)
         left_layout.addWidget(self.value_slider)
@@ -188,6 +208,7 @@ class HandApp(QWidget):
         self.currently_playing = set()
         self.new_strum_flag = [False]  # <- mutable boolean
         self.sound_overlapping = False
+        self.use_velocity = False  # Toggle between velocity-based and slider-based delay
 
         # Audio
         try:
@@ -304,6 +325,14 @@ class HandApp(QWidget):
             self.sound_overlapping = False
             self.Overlap_sounds_button.setText("Overlap\nOFF")
 
+    def toggle_velocity(self):
+        if not self.use_velocity:
+            self.velocity_button.setText("Velocity\nMode")
+            self.use_velocity = True
+        else:
+            self.use_velocity = False
+            self.velocity_button.setText("Slider\nMode")
+
     def on_dropdown_change(self, index):
         selected_mode = self.mode_dropdown.currentText()
         self.load_audio_files(selected_mode)
@@ -338,9 +367,15 @@ class HandApp(QWidget):
         return finger_states
 
     async def play_notes_with_delay(self, to_start):
+        print("self.use_velocity", self.use_velocity)
         for note in to_start:
-            selected_value = self.value_slider.value()
-            ms_delay = ((selected_value-1)*7)/1000.0
+            if self.use_velocity:
+                velocity = 1.0 
+                ms_delay = max(0.01, min(0.1, 0.1 - velocity * 0.09))
+            else:
+                # Use slider value for delay
+                selected_value = self.value_slider.value()
+                ms_delay = ((selected_value-1)*7)/1000.0
             await asyncio.sleep(ms_delay)
             getattr(self, note).stop()
             getattr(self, note).play()
