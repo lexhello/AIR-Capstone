@@ -122,7 +122,7 @@ class HandApp(QWidget):
 
 
         self.mode_dropdown = QComboBox()
-        self.mode_dropdown.addItems(["normal", "lisa", "guitar"])
+        self.mode_dropdown.addItems(["piano", "lisa", "guitar"])
         self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
         self.mode_dropdown.setMinimumWidth(100)
         self.mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -212,10 +212,11 @@ class HandApp(QWidget):
 
         # Game mode setup
         self.songs = {
-            "Twinkle Twinkle": ["c4", "c4", "g4", "g4", "a4", "a4", "g4", "f4", "f4", "e4", "e4", "d4", "d4", "c4", "g4", "g4", "f4", "f4", "e4", "e4", "d4", "g4", "g4", "f4", "f4", "e4", "e4", "d4", "c4", "c4", "g4", "g4", "a4", "a4", "g4", "f4", "f4", "e4", "e4", "d4", "d4", "c4"],
-            "Happy Birthday": ["c4", "c4", "d4", "c4", "f4", "e4", "c4", "c4", "d4", "c4", "g4", "f4"],
-            "Mary Had a Little Lamb": ["e4", "d4", "c4", "d4", "e4", "e4", "e4", "d4", "d4", "d4", "e4", "g4", "g4", "e4", "d4", "c4", "d4", "e4", "e4", "e4", "e4", "d4", "d4", "e4", "d4", "c4"],
+            "Twinkle Twinkle": ["c4", "g4", "a4", "g4", "f4", "e4", "d4", "c4", "g4", "f4", "e4", "d4", "g4", "f4", "e4", "d4", "c4", "g4", "a4", "g4", "f4", "e4", "d4", "c4"],
+            "Happy Birthday": ["c4", "d4", "c4", "f4", "e4", "c4", "d4", "c4", "g4", "f4"],
+            "Mary Had a Little Lamb": ["e4", "d4", "c4", "d4", "e4", "d4", "e4", "g4", "e4", "d4", "c4", "d4", "e4", "d4", "e4", "d4", "c4"],
         }
+        self.score = 0
         # Define the expected chord for each note
         self.note_to_chord = {
             "c4": {"c4", "e4", "g4"},
@@ -225,8 +226,39 @@ class HandApp(QWidget):
             "g4": {"g4", "b4", "d4"},
             "a4": {"a4", "c5"}
         }
+
+        # Map notes to finger position images
+        self.note_to_image = {
+            "c4": "static/images/1.jpg",
+            "d4": "static/images/2.jpg",
+            "e4": "static/images/3.jpg",
+            "f4": "static/images/4.jpg",
+            "g4": "static/images/5.jpg",
+            "a4": "static/images/6.jpg"
+        }
+
+        # Load finger position images
+        self.finger_images = {}
+        for note, img_path in self.note_to_image.items():
+            try:
+                img = cv2.imread(img_path)
+                if img is not None:
+                    self.finger_images[note] = img
+                    print(f"Loaded image for {note}: {img_path}")
+                else:
+                    print(f"Failed to load image: {img_path}")
+            except Exception as e:
+                print(f"Error loading image {img_path}: {e}")
+
         self.game_mode = False
+        self.testing_mode = False
         self.current_note_index = 0
+        self.wrong_chord_flash = False
+        self.flash_start_time = 0
+        self.previous_selected_notes = set()  # Track previous finger pattern
+        self.current_chord_correct = True  # Track if current chord is correct
+        self.last_chord_change_time = 0
+        self.chord_debounce_time = 0.5  
         self.game_song_dropdown = QComboBox()
         self.game_song_dropdown.addItems(self.songs.keys())
         self.game_song_dropdown.currentIndexChanged.connect(self.on_game_song_change)
@@ -311,11 +343,18 @@ class HandApp(QWidget):
         print(f"BLE Notification: {decoded}", file=sys.stderr, flush=True)
         self.status_label.setText(f"BLE: {decoded}")
         self.new_strum_flag[0] = True
-        
-    
+
+    def keyPressEvent(self, event):
+        """Handle keyboard events - space bar triggers strum when testing mode is enabled"""
+        if event.key() == Qt.Key_Space and self.testing_mode:
+            print("Space bar pressed - triggering test strum")
+            self.handle_ble_notification("1")
+        else:
+            super().keyPressEvent(event)
+
     def load_audio_files(self, mode):
         try:
-            if mode == "normal":
+            if mode == "piano":
                 self.c4 = pygame.mixer.Sound("static/audio/c4.mp3")
                 self.d4 = pygame.mixer.Sound("static/audio/d4.mp3")
                 self.e4 = pygame.mixer.Sound("static/audio/e4.mp3")
@@ -407,6 +446,7 @@ class HandApp(QWidget):
             self.game_mode_button.setText("Game\nMode\nON")
             self.song_notes_label.show()
             self.current_note_index = 0
+            self.score = 0
             self.update_song_display()
         else:
             self.game_mode = False
@@ -440,6 +480,7 @@ class HandApp(QWidget):
         self.current_note_index = 0
         self.currently_playing.clear()
         self.selected_notes.clear()
+        self.score = 0
         if self.game_mode:
             self.update_song_display()
 
@@ -527,7 +568,63 @@ class HandApp(QWidget):
                         self.selected_notes.update(notes)
                         #self.currently_playing.update(notes)
                         break
-                
+
+                # Check if finger pattern changed and validate in game mode
+                chord_processed = False
+                if self.game_mode and self.selected_notes != self.previous_selected_notes:
+                    # Check if enough time has passed since last chord change (debouncing)
+                    current_time = time.time()
+                    time_since_last_change = current_time - self.last_chord_change_time
+
+                    if time_since_last_change >= self.chord_debounce_time:
+                        if self.selected_notes:  # Only check if there's a pattern (not empty)
+                            selected_song = self.game_song_dropdown.currentText()
+                            song_notes = self.songs[selected_song]
+                            if self.current_note_index < len(song_notes):
+                                current_note = song_notes[self.current_note_index]
+                                expected_chord = self.note_to_chord.get(current_note, {current_note})
+
+                                if self.selected_notes == expected_chord:
+                                    self.current_note_index += 1
+                                    self.score += 1
+                                    print(f"✓ Correct chord! Moving to note {self.current_note_index}")
+                                    self.wrong_chord_flash = False  # Clear any flash
+                                    self.current_chord_correct = True
+                                    self.last_chord_change_time = current_time  # Update timestamp
+                                    self.previous_selected_notes.clear()
+                                    chord_processed = True
+                                else:
+                                    # Wrong chord - trigger red flash
+                                    self.wrong_chord_flash = True
+                                    self.flash_start_time = time.time()
+                                    self.current_chord_correct = False
+                                    self.current_note_index += 1
+                                    self.previous_selected_notes.clear()
+                                    print("cleared previous pattern")
+                                    self.last_chord_change_time = current_time  # Update timestamp
+                                    chord_processed = True
+                                    if current_note in self.selected_notes:
+                                        print(f"✗ Wrong chord! Expected {expected_chord}, got {self.selected_notes}")
+                                    else:
+                                        print(f"✗ Wrong note! Expected chord for {current_note}: {expected_chord}, got {self.selected_notes}")
+
+                                    # Check if the wrong chord is correct for the NEW current note
+                                    if self.current_note_index < len(song_notes):
+                                        new_current_note = song_notes[self.current_note_index]
+                                        new_expected_chord = self.note_to_chord.get(new_current_note, {new_current_note})
+                                        if self.selected_notes == new_expected_chord:
+                                            print(f"✓ But chord is correct for next note {new_current_note}")
+                                            self.current_chord_correct = True
+                                            self.current_note_index += 1
+
+                    # Update previous pattern only if we didn't process a chord
+                    if not chord_processed:
+                        self.previous_selected_notes = self.selected_notes.copy()
+                else:
+                    # Update previous pattern when not in game mode
+                    if not self.game_mode:
+                        self.previous_selected_notes = self.selected_notes.copy()
+
                 to_stop = set()
                 
                 # Check BLE event flag
@@ -550,30 +647,12 @@ class HandApp(QWidget):
                         getattr(self, note).stop()
 
                 if to_start:
-                    should_play = True  
-
-                    # In game mode, check if correct chord before playing
-                    if self.game_mode:
-                        selected_song = self.game_song_dropdown.currentText()
-                        song_notes = self.songs[selected_song]
-                        if self.current_note_index < len(song_notes):
-                            current_note = song_notes[self.current_note_index]
-                            expected_chord = self.note_to_chord.get(current_note, {current_note})
-
-                            if to_start == expected_chord:
-                                self.current_note_index += 1
-                                print(f"✓ Correct chord! Moving to note {self.current_note_index}")
-                                should_play = True  # Play correct chord
-                            else:
-                                # Wrong chord - don't play sound
-                                should_play = False
-                                if current_note in to_start:
-                                    print(f"✗ Wrong chord! Expected {expected_chord}, got {to_start}")
-                                else:
-                                    print(f"✗ Wrong note! Expected chord for {current_note}: {expected_chord}, got {to_start}")
-
+                    # Play the notes on strum (only if not in game mode OR chord is correct)
+                    should_play = not self.game_mode or self.current_chord_correct
                     if should_play:
                         asyncio.create_task(self.play_notes_with_delay(to_start))
+                    else:
+                        print("✗ Not playing - wrong chord held")
 
                 self.currently_playing = set()
                 self.selected_notes = set()
@@ -594,7 +673,7 @@ class HandApp(QWidget):
 
                 frame_h, frame_w = frame.shape[:2]
                 x = (frame_w - text_width) // 2
-                y = 80 
+                y = 80
                 padding = 15
                 cv2.rectangle(frame,
                             (x - padding, y - text_height - padding),
@@ -602,9 +681,26 @@ class HandApp(QWidget):
                             (0, 0, 0), -1)
 
                 cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 0), thickness)
+
+                # Display finger position image if available
+                if current_note in self.finger_images:
+                    finger_img = self.finger_images[current_note]
+                    # Resize image to fit nicely on screen (e.g., 200x200)
+                    img_h, img_w = finger_img.shape[:2]
+                    target_size = 200
+                    scale = target_size / max(img_h, img_w)
+                    new_w, new_h = int(img_w * scale), int(img_h * scale)
+                    resized_img = cv2.resize(finger_img, (new_w, new_h))
+
+                    # Position image at top-right corner
+                    img_x = frame_w - new_w - 20
+                    img_y = 20
+
+                    # Overlay image on frame
+                    frame[img_y:img_y+new_h, img_x:img_x+new_w] = resized_img
             else:
                 # Song completed
-                text = "SONG COMPLETE!"
+                text = f"SONG COMPLETE!\n Score: {self.score}/{len(song_notes)}"
                 font = cv2.FONT_HERSHEY_DUPLEX
                 font_scale = 2.0
                 thickness = 4
@@ -618,6 +714,18 @@ class HandApp(QWidget):
                             (x + text_width + padding, y + baseline + padding),
                             (0, 0, 0), -1)
                 cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 255), thickness)
+
+        # Red flash overlay for wrong chords
+        if self.wrong_chord_flash:
+            flash_duration = 0.3 
+            elapsed = time.time() - self.flash_start_time
+            if elapsed < flash_duration:
+                overlay = frame.copy()
+                cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (255, 0, 0), -1)
+                alpha = 0.3
+                frame = cv2.addWeighted(frame, 1 - alpha, overlay, alpha, 0)
+            else:
+                self.wrong_chord_flash = False
 
         # Render frame
         h, w, ch = frame.shape
@@ -639,19 +747,16 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
     
     win = HandApp()
-    
+
     # Create async task for BLE init
     async def setup():
         await win.init_ble()
         print("BLE initialized and notifications handler created")
-    
-    async def testing():
-        while True:
-            win.handle_ble_notification("1")
-            await asyncio.sleep(1)
-        
-    loop.create_task(setup())
-    # loop.create_task(testing())
+
+    # Enable testing mode (space bar to trigger strum)
+    win.testing_mode = True
+
+    # loop.create_task(setup())
     win.show()
     
     with loop:
