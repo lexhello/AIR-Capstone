@@ -548,24 +548,32 @@ class HandApp(QWidget):
                 if not self.sound_overlapping:
                     for note in to_stop:
                         getattr(self, note).stop()
-                # Play notes
-                
-                if to_start:
-                    asyncio.create_task(self.play_notes_with_delay(to_start))
 
-                    # In game mode, check if correct chord was played
+                if to_start:
+                    should_play = True  
+
+                    # In game mode, check if correct chord before playing
                     if self.game_mode:
                         selected_song = self.game_song_dropdown.currentText()
                         song_notes = self.songs[selected_song]
                         if self.current_note_index < len(song_notes):
                             current_note = song_notes[self.current_note_index]
                             expected_chord = self.note_to_chord.get(current_note, {current_note})
-                            # Check if the played notes match the expected chord exactly
+
                             if to_start == expected_chord:
                                 self.current_note_index += 1
                                 print(f"✓ Correct chord! Moving to note {self.current_note_index}")
-                            elif current_note in to_start:
-                                print(f"✗ Wrong chord! Expected {expected_chord}, got {to_start}")
+                                should_play = True  # Play correct chord
+                            else:
+                                # Wrong chord - don't play sound
+                                should_play = False
+                                if current_note in to_start:
+                                    print(f"✗ Wrong chord! Expected {expected_chord}, got {to_start}")
+                                else:
+                                    print(f"✗ Wrong note! Expected chord for {current_note}: {expected_chord}, got {to_start}")
+
+                    if should_play:
+                        asyncio.create_task(self.play_notes_with_delay(to_start))
 
                 self.currently_playing = set()
                 self.selected_notes = set()
@@ -642,8 +650,8 @@ if __name__ == "__main__":
             win.handle_ble_notification("1")
             await asyncio.sleep(1)
         
-    # loop.create_task(setup())
-    loop.create_task(testing())
+    loop.create_task(setup())
+    # loop.create_task(testing())
     win.show()
     
     with loop:
