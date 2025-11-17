@@ -13,6 +13,7 @@ import sys
 from qasync import QEventLoop
 from receiver import BLEReader
 import asyncio
+import time
 
 # --- MediaPipe setup ---
 mp_hands = mp.solutions.hands
@@ -50,9 +51,16 @@ class HandApp(QWidget):
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 16px; color: white; background-color: #333; padding: 6px;")
 
+        self.song_notes_label = QLabel("")
+        self.song_notes_label.setAlignment(Qt.AlignCenter)
+        self.song_notes_label.setStyleSheet("font-size: 14px; color: white; background-color: #444; padding: 10px; border-radius: 5px;")
+        self.song_notes_label.setWordWrap(True)
+        self.song_notes_label.hide()  # Hidden by default, shown in game mode
+
         self.Camera_button = QPushButton("Start\nCamera")
         self.Camera_button.clicked.connect(self.toggle_camera)
-        self.Camera_button.setFixedSize(120, 120)
+        self.Camera_button.setMinimumSize(100, 100)
+        self.Camera_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.Camera_button.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
@@ -72,7 +80,8 @@ class HandApp(QWidget):
 
         self.Overlap_sounds_button = QPushButton("Overlap\nOFF")
         self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
-        self.Overlap_sounds_button.setFixedSize(120, 120)
+        self.Overlap_sounds_button.setMinimumSize(100, 100)
+        self.Overlap_sounds_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.Overlap_sounds_button.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
@@ -90,10 +99,33 @@ class HandApp(QWidget):
             }
         """)
 
+        self.game_mode_button = QPushButton("Game\nMode\nOFF")
+        self.game_mode_button.clicked.connect(self.toggle_game_mode)
+        self.game_mode_button.setMinimumSize(100, 100)
+        self.game_mode_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.game_mode_button.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton:pressed {
+                background-color: #6A1B9A;
+            }
+        """)
+
+
         self.mode_dropdown = QComboBox()
         self.mode_dropdown.addItems(["normal", "lisa", "guitar"])
         self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
-        self.mode_dropdown.setFixedWidth(120)
+        self.mode_dropdown.setMinimumWidth(100)
+        self.mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.mode_dropdown.setStyleSheet("""
             QComboBox {
                 background-color: #9C27B0;
@@ -118,7 +150,8 @@ class HandApp(QWidget):
         """)
         self.velocity_button = QPushButton("Slider\nMode")
         self.velocity_button.clicked.connect(self.toggle_velocity)
-        self.velocity_button.setFixedSize(120, 120)
+        self.velocity_button.setMinimumSize(100, 100)
+        self.velocity_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.velocity_button.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800;
@@ -142,7 +175,8 @@ class HandApp(QWidget):
         self.value_slider.setValue(3)  # default value
         self.value_slider.setTickPosition(QSlider.TicksBelow)
         self.value_slider.setTickInterval(1)
-        self.value_slider.setFixedWidth(120)
+        self.value_slider.setMinimumWidth(100)
+        self.value_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.value_slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 background: #ddd;
@@ -169,11 +203,57 @@ class HandApp(QWidget):
         # Label to show current value
         self.slider_label = QLabel(f"Delay: {self.value_slider.value()}")
         self.slider_label.setAlignment(Qt.AlignCenter)
-        self.slider_label.setFixedWidth(120)
+        self.slider_label.setMinimumWidth(100)
+        self.slider_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.slider_label.setStyleSheet("font-size: 12px; color: white; background-color: #555; padding: 4px; border-radius: 5px;")
 
         # Connect slider movement to update the label
         self.value_slider.valueChanged.connect(lambda val: self.slider_label.setText(f"Delay: {val}"))
+
+        # Game mode setup
+        self.songs = {
+            "Twinkle Twinkle": ["c4", "c4", "g4", "g4", "a4", "a4", "g4", "f4", "f4", "e4", "e4", "d4", "d4", "c4", "g4", "g4", "f4", "f4", "e4", "e4", "d4", "g4", "g4", "f4", "f4", "e4", "e4", "d4", "c4", "c4", "g4", "g4", "a4", "a4", "g4", "f4", "f4", "e4", "e4", "d4", "d4", "c4"],
+            "Happy Birthday": ["c4", "c4", "d4", "c4", "f4", "e4", "c4", "c4", "d4", "c4", "g4", "f4"],
+            "Mary Had a Little Lamb": ["e4", "d4", "c4", "d4", "e4", "e4", "e4", "d4", "d4", "d4", "e4", "g4", "g4", "e4", "d4", "c4", "d4", "e4", "e4", "e4", "e4", "d4", "d4", "e4", "d4", "c4"],
+        }
+        # Define the expected chord for each note
+        self.note_to_chord = {
+            "c4": {"c4", "e4", "g4"},
+            "d4": {"d4", "f4", "a4"},
+            "e4": {"e4", "g4", "b4"},
+            "f4": {"f4", "a4", "c5"},
+            "g4": {"g4", "b4", "d4"},
+            "a4": {"a4", "c5"}
+        }
+        self.game_mode = False
+        self.current_note_index = 0
+        self.game_song_dropdown = QComboBox()
+        self.game_song_dropdown.addItems(self.songs.keys())
+        self.game_song_dropdown.currentIndexChanged.connect(self.on_game_song_change)
+        self.game_song_dropdown.setMinimumWidth(100)
+        self.game_song_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.game_song_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QComboBox:hover {
+                background-color: #7B1FA2;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #9C27B0;
+                color: white;
+                selection-background-color: #7B1FA2;
+            }
+        """)
 
         # Layout setup - controls on left, video on right
         main_layout = QHBoxLayout()
@@ -186,16 +266,20 @@ class HandApp(QWidget):
         left_layout.addWidget(self.mode_dropdown)
         left_layout.addWidget(self.slider_label)
         left_layout.addWidget(self.value_slider)
+        left_layout.addWidget(self.game_mode_button)
+        left_layout.addWidget(self.game_song_dropdown)  # Song dropdown right after game mode button
         left_layout.addStretch()  # Push buttons to top
 
         # Right side - vertical layout for video and status
         right_layout = QVBoxLayout()
         right_layout.addWidget(self.video_label)
         right_layout.addWidget(self.status_label)
+        right_layout.addWidget(self.song_notes_label)
 
         # Add left and right layouts to main layout
-        main_layout.addLayout(left_layout)
-        main_layout.addLayout(right_layout)
+        # Set stretch factors: left panel gets less space, right panel (video) gets more
+        main_layout.addLayout(left_layout, 1)  # Left panel gets 1 part
+        main_layout.addLayout(right_layout, 4)  # Right panel gets 4 parts
 
         self.setLayout(main_layout)
 
@@ -317,6 +401,18 @@ class HandApp(QWidget):
             self.timer.start(30)
             self.Camera_button.setText("Stop\nCamera")
     
+    def toggle_game_mode(self):
+        if not self.game_mode:
+            self.game_mode = True
+            self.game_mode_button.setText("Game\nMode\nON")
+            self.song_notes_label.show()
+            self.current_note_index = 0
+            self.update_song_display()
+        else:
+            self.game_mode = False
+            self.game_mode_button.setText("Game\nMode\nOFF")
+            self.song_notes_label.hide()
+    
     def overlap_sounds(self):
         if not self.sound_overlapping:
             self.Overlap_sounds_button.setText("Overlap\nON")
@@ -336,6 +432,22 @@ class HandApp(QWidget):
     def on_dropdown_change(self, index):
         selected_mode = self.mode_dropdown.currentText()
         self.load_audio_files(selected_mode)
+    
+    def on_game_song_change(self, index):
+        selected_song = self.game_song_dropdown.currentText()
+        print(f"Selected song: {selected_song}")
+        self.current_song = self.songs[selected_song]
+        self.current_note_index = 0
+        self.currently_playing.clear()
+        self.selected_notes.clear()
+        if self.game_mode:
+            self.update_song_display()
+
+    def update_song_display(self):
+        selected_song = self.game_song_dropdown.currentText()
+        notes = self.songs[selected_song]
+        notes_text = " → ".join(notes)
+        self.song_notes_label.setText(f"🎵 {selected_song}:\n{notes_text}")
 
     def distance(self, a, b):
         return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
@@ -441,11 +553,63 @@ class HandApp(QWidget):
                 if to_start:
                     asyncio.create_task(self.play_notes_with_delay(to_start))
 
+                    # In game mode, check if correct chord was played
+                    if self.game_mode:
+                        selected_song = self.game_song_dropdown.currentText()
+                        song_notes = self.songs[selected_song]
+                        if self.current_note_index < len(song_notes):
+                            current_note = song_notes[self.current_note_index]
+                            expected_chord = self.note_to_chord.get(current_note, {current_note})
+                            # Check if the played notes match the expected chord exactly
+                            if to_start == expected_chord:
+                                self.current_note_index += 1
+                                print(f"✓ Correct chord! Moving to note {self.current_note_index}")
+                            elif current_note in to_start:
+                                print(f"✗ Wrong chord! Expected {expected_chord}, got {to_start}")
+
                 self.currently_playing = set()
                 self.selected_notes = set()
                 
 
         self.status_label.setText(f"Finger Status: {finger_text}")
+
+        if self.game_mode:
+            selected_song = self.game_song_dropdown.currentText()
+            song_notes = self.songs[selected_song]
+            if self.current_note_index < len(song_notes):
+                current_note = song_notes[self.current_note_index]
+                text = f"Play: {current_note.upper()}"
+                font = cv2.FONT_HERSHEY_DUPLEX
+                font_scale = 2.5
+                thickness = 4
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+                frame_h, frame_w = frame.shape[:2]
+                x = (frame_w - text_width) // 2
+                y = 80 
+                padding = 15
+                cv2.rectangle(frame,
+                            (x - padding, y - text_height - padding),
+                            (x + text_width + padding, y + baseline + padding),
+                            (0, 0, 0), -1)
+
+                cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 0), thickness)
+            else:
+                # Song completed
+                text = "SONG COMPLETE!"
+                font = cv2.FONT_HERSHEY_DUPLEX
+                font_scale = 2.0
+                thickness = 4
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                frame_h, frame_w = frame.shape[:2]
+                x = (frame_w - text_width) // 2
+                y = frame_h // 2
+                padding = 15
+                cv2.rectangle(frame,
+                            (x - padding, y - text_height - padding),
+                            (x + text_width + padding, y + baseline + padding),
+                            (0, 0, 0), -1)
+                cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 255), thickness)
 
         # Render frame
         h, w, ch = frame.shape
