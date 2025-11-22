@@ -6,6 +6,13 @@
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
+// FSR: 3.3V -> FSR -> Node -> 10kΩ -> GND, Node -> A1 (D1)
+const int FSR_PIN  = A1;
+
+// ---- FSR thresholds (tune after reading serial output) ----
+const int FSR_PRESS_ON  = 500;  // above = pressed
+const int FSR_PRESS_OFF = 400;   // below = released
+
 BLECharacteristic *pCharacteristic;
 
 void setup() {
@@ -60,15 +67,17 @@ sh2_SensorValue_t sensorValue;
 const uint16_t REPORT_US = 10000; // ~100 Hz
 
 // ---- Strumming + acceleration thresholds ----
-static const float    THRESH_ON     = 1.5f;
-static const float    THRESH_OFF    = 1.0f;
+// angular velocity is too sensitive
+
+static const float    THRESH_ON     = 1.2f;
+static const float    THRESH_OFF    = 0.8f;
 static const uint32_t TAU_MS        = 120;
 static const uint32_t MIN_HOLD_MS   = 80;
 static const uint32_t PULSE_MS      = 40;
 static const uint32_t REFRACTORY_MS = 200;
 
 static const float    A_SPIKE_ABS   = 20.0f;
-static const float    A_SPIKE_REL   = 20.0f;
+static const float    A_SPIKE_REL   = 5.0f;
 static const uint32_t A_TAU_MS      = 80;
 
 // ---- State ----
@@ -139,6 +148,11 @@ static inline void try_pulse_and_send(uint32_t nowMs){
 
 // ===================== MAIN LOOP =====================
 void loop() {
+  // ---- FSR read + hysteresis ----
+  static bool fsrPressed = false;
+
+  // FSR: 3.3V -> FSR -> Node -> 10kΩ -> GND, Node -> A1 (D1)
+
   static bool imu_inited = false;
   if (!imu_inited) {
     if (!bno08x.begin_I2C()) {
@@ -162,6 +176,9 @@ void loop() {
   }
 
   while (bno08x.getSensorEvent(&sensorValue)) {
+    int fsrValue = analogRead(FSR_PIN); // A1/D1 analog input (0–4095)
+    if (!fsrPressed && fsrValue >= FSR_PRESS_ON) fsrPressed = true;
+    else if (fsrPressed && fsrValue <= FSR_PRESS_OFF) fsrPressed = false;
     uint32_t nowMs = millis();
 
     if (sensorValue.sensorId == SH2_GAME_ROTATION_VECTOR) {
@@ -197,7 +214,8 @@ void loop() {
 
       prevStrumming = ifStrumming;
       if (ifStrumming == 0) {
-        if (w_filt >= THRESH_ON && (nowMs - lastToggleMs) >= MIN_HOLD_MS) {
+        if (w_filt >= THRESH_ON && (nowMs - lastToggleMs) >= MIN_HOLD_MS &&
+          fsrPressed) {
           ifStrumming = 1;
           lastToggleMs = nowMs;
         }
@@ -208,16 +226,17 @@ void loop() {
         }
       }
 
-      if (prevStrumming == 0 && ifStrumming == 1) try_pulse_and_send(nowMs);
+      if (prevStrumming == 0 && ifStrumming == 1 && fsrPressed) try_pulse_and_send(nowMs);
       if (strumPulse && nowMs >= pulseEndMs) strumPulse = 0;
 
       // ✅ Print angular velocity
-      Serial.print("ωx="); Serial.print(wx, 3);
-      Serial.print(" ωy="); Serial.print(wy, 3);
-      Serial.print(" ωz="); Serial.print(wz, 3);
-      Serial.print(" |ω|="); Serial.print(w_mag, 3);
-      Serial.print(" filt_w="); Serial.print(w_filt, 3);
-      Serial.print(" strum="); Serial.println((int)ifStrumming);
+      // Serial.print("ωx="); Serial.print(wx, 3);
+      // Serial.print(" ωy="); Serial.print(wy, 3);
+      // Serial.print(" ωz="); Serial.print(wz, 3);
+      // Serial.print(" |ω|="); Serial.print(w_mag, 3);
+      // Serial.print(" filt_w="); Serial.print(w_filt, 3);
+      // Serial.print(" strum="); Serial.println((int)ifStrumming);
+      Serial.print(fsrPressed);
     }
 
     else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
@@ -230,8 +249,9 @@ void loop() {
       float alpha_a = 1.0f - expf(-(REPORT_US * 1e-6f) / fmaxf(1e-6f, A_TAU_MS / 1000.0f));
       a_filt += alpha_a * (a_mag - a_filt);
 
-      bool spike = (a_mag >= A_SPIKE_ABS) || ((a_mag - a_filt) >= A_SPIKE_REL);
-      if (spike) try_pulse_and_send(nowMs);
+      // bool spike = (a_mag >= A_SPIKE_ABS) || ((a_mag - a_filt) >= A_SPIKE_REL);
+      bool spike = ((a_mag - a_filt) >= A_SPIKE_REL);
+      if (spike && fsrPressed) try_pulse_and_send(nowMs);
       if (strumPulse && nowMs >= pulseEndMs) strumPulse = 0;
 
       // ✅ Print linear acceleration

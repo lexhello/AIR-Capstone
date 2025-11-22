@@ -83,7 +83,7 @@ void loop() {
   else if (fsrPressed && fsrValue <= FSR_PRESS_OFF) fsrPressed = false;
 
   // Uncomment this line temporarily to calibrate threshold
-  // Serial.printf("FSR=%d pressed=%d\n", fsrValue, fsrPressed);
+  Serial.printf("FSR=%d pressed=%d\n", fsrValue, fsrPressed);
 
   // ---- Tilt debounce ----
   if (edgeFlag) {
