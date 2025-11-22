@@ -323,6 +323,8 @@ class HandApp(QWidget):
         self.selected_notes = set()
         self.currently_playing = set()
         self.new_strum_flag = [False]  # <- mutable boolean
+        self.stop_sound_flag = [False]  # <- mutable boolean
+        self.velocity = [0.0]
         self.sound_overlapping = False
         self.use_velocity = False  # Toggle between velocity-based and slider-based delay
 
@@ -342,7 +344,12 @@ class HandApp(QWidget):
         """Called in Qt event loop - safe to update UI and flags"""
         print(f"BLE Notification: {decoded}", file=sys.stderr, flush=True)
         self.status_label.setText(f"BLE: {decoded}")
-        self.new_strum_flag[0] = True
+        items = decoded.strip().split(",")
+        if items[0] == "1":
+            self.new_strum_flag[0] = True
+            self.velocity[0] = float(items[1]) if len(items) > 1 else 0.0
+        if items[0] == "0":
+            self.stop_sound_flag[0] = True
 
     def keyPressEvent(self, event):
         """Handle keyboard events - space bar triggers strum when testing mode is enabled"""
@@ -523,8 +530,9 @@ class HandApp(QWidget):
         print("self.use_velocity", self.use_velocity)
         for note in to_start:
             if self.use_velocity:
-                velocity = 1.0 
-                ms_delay = max(0.01, min(0.1, 0.1 - velocity * 0.09))
+                velocity = self.velocity[0] 
+                velocity = min(1.2, velocity)
+                ms_delay = max(0.01, min(0.1, 1.2 - velocity * 0.15))
             else:
                 # Use slider value for delay
                 selected_value = self.value_slider.value()
@@ -634,7 +642,10 @@ class HandApp(QWidget):
                     self.active_notes = self.currently_playing.copy()
                     print("reset")
                     self.new_strum_flag[0] = False  # reset flag
-                    
+                elif self.stop_sound_flag[0]:
+                    to_stop = self.active_notes
+                    self.active_notes = set()
+                    self.stop_sound_flag[0] = False  # reset flag
 
                 # to_stop = self.active_notes - self.currently_playing
                 # to_start = self.currently_playing - self.active_notes
@@ -750,13 +761,14 @@ if __name__ == "__main__":
 
     # Create async task for BLE init
     async def setup():
+        print("Setting up BLE...")
         await win.init_ble()
         print("BLE initialized and notifications handler created")
 
     # Enable testing mode (space bar to trigger strum)
     win.testing_mode = True
 
-    # loop.create_task(setup())
+    loop.create_task(setup())
     win.show()
     
     with loop:
