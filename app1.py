@@ -574,81 +574,51 @@ class HandApp(QWidget):
                 for fingers, states_list, notes in patterns:
                     if all(states[f] == s for f, s in zip(fingers, states_list)):
                         self.selected_notes.update(notes)
-                        #self.currently_playing.update(notes)
                         break
 
-                # Check if finger pattern changed and validate in game mode
-                chord_processed = False
-                if self.game_mode and self.selected_notes != self.previous_selected_notes:
-                    # Check if enough time has passed since last chord change (debouncing)
-                    current_time = time.time()
-                    time_since_last_change = current_time - self.last_chord_change_time
-
-                    if time_since_last_change >= self.chord_debounce_time:
-                        if self.selected_notes:  # Only check if there's a pattern (not empty)
-                            selected_song = self.game_song_dropdown.currentText()
-                            song_notes = self.songs[selected_song]
-                            if self.current_note_index < len(song_notes):
-                                current_note = song_notes[self.current_note_index]
-                                expected_chord = self.note_to_chord.get(current_note, {current_note})
-
-                                if self.selected_notes == expected_chord:
-                                    self.current_note_index += 1
-                                    self.score += 1
-                                    print(f"✓ Correct chord! Moving to note {self.current_note_index}")
-                                    self.wrong_chord_flash = False  # Clear any flash
-                                    self.current_chord_correct = True
-                                    self.last_chord_change_time = current_time  # Update timestamp
-                                    self.previous_selected_notes.clear()
-                                    chord_processed = True
-                                else:
-                                    # Wrong chord - trigger red flash
-                                    self.wrong_chord_flash = True
-                                    self.flash_start_time = time.time()
-                                    self.current_chord_correct = False
-                                    self.current_note_index += 1
-                                    self.previous_selected_notes.clear()
-                                    print("cleared previous pattern")
-                                    self.last_chord_change_time = current_time  # Update timestamp
-                                    chord_processed = True
-                                    if current_note in self.selected_notes:
-                                        print(f"✗ Wrong chord! Expected {expected_chord}, got {self.selected_notes}")
-                                    else:
-                                        print(f"✗ Wrong note! Expected chord for {current_note}: {expected_chord}, got {self.selected_notes}")
-
-                                    # Check if the wrong chord is correct for the NEW current note
-                                    if self.current_note_index < len(song_notes):
-                                        new_current_note = song_notes[self.current_note_index]
-                                        new_expected_chord = self.note_to_chord.get(new_current_note, {new_current_note})
-                                        if self.selected_notes == new_expected_chord:
-                                            print(f"✓ But chord is correct for next note {new_current_note}")
-                                            self.current_chord_correct = True
-                                            self.current_note_index += 1
-
-                    # Update previous pattern only if we didn't process a chord
-                    if not chord_processed:
-                        self.previous_selected_notes = self.selected_notes.copy()
-                else:
-                    # Update previous pattern when not in game mode
-                    if not self.game_mode:
-                        self.previous_selected_notes = self.selected_notes.copy()
+                # Track if pattern changed
+                pattern_changed = self.selected_notes != self.previous_selected_notes
 
                 to_stop = set()
                 
-                # Check BLE event flag
+                # Check BLE event flag (strum detected)
                 if self.new_strum_flag[0]:
                     to_stop = self.active_notes
                     self.currently_playing = self.selected_notes.copy()
                     self.active_notes = self.currently_playing.copy()
-                    print("reset")
+                    
+                    if self.game_mode and pattern_changed and self.selected_notes:
+                        selected_song = self.game_song_dropdown.currentText()
+                        song_notes = self.songs[selected_song]
+                        
+                        if self.current_note_index < len(song_notes):
+                            current_note = song_notes[self.current_note_index]
+                            expected_chord = self.note_to_chord.get(current_note, {current_note})
+
+                            if self.selected_notes == expected_chord:
+                                # Correct chord!
+                                self.current_note_index += 1
+                                self.score += 1
+                                print(f"✓ Correct chord! Moving to note {self.current_note_index}")
+                                self.wrong_chord_flash = False
+                                self.current_chord_correct = True
+                            else:
+                                # Wrong chord - trigger red flash
+                                self.wrong_chord_flash = True
+                                self.flash_start_time = time.time()
+                                self.current_chord_correct = False
+                                self.current_note_index += 1
+                                print(f"✗ Wrong chord! Expected {expected_chord}, got {self.selected_notes}")
+                        
+                        # Update previous pattern after validation
+                        self.previous_selected_notes = self.selected_notes.copy()
+                    
                     self.new_strum_flag[0] = False  # reset flag
+                    
                 elif self.stop_sound_flag[0]:
                     to_stop = self.active_notes
                     self.active_notes = set()
                     self.stop_sound_flag[0] = False  # reset flag
-
-                # to_stop = self.active_notes - self.currently_playing
-                # to_start = self.currently_playing - self.active_notes
                 
                 to_start = self.currently_playing
 
@@ -667,7 +637,6 @@ class HandApp(QWidget):
 
                 self.currently_playing = set()
                 self.selected_notes = set()
-                
 
         self.status_label.setText(f"Finger Status: {finger_text}")
 
@@ -768,7 +737,7 @@ if __name__ == "__main__":
     # Enable testing mode (space bar to trigger strum)
     win.testing_mode = True
 
-    loop.create_task(setup())
+    # loop.create_task(setup())
     win.show()
     
     with loop:
