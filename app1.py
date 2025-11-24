@@ -587,7 +587,7 @@ class HandApp(QWidget):
                     self.currently_playing = self.selected_notes.copy()
                     self.active_notes = self.currently_playing.copy()
                     
-                    if self.game_mode and pattern_changed and self.selected_notes:
+                    if self.game_mode and self.selected_notes:
                         selected_song = self.game_song_dropdown.currentText()
                         song_notes = self.songs[selected_song]
                         
@@ -602,7 +602,7 @@ class HandApp(QWidget):
                                 print(f"✓ Correct chord! Moving to note {self.current_note_index}")
                                 self.wrong_chord_flash = False
                                 self.current_chord_correct = True
-                            else:
+                            elif pattern_changed:
                                 # Wrong chord - trigger red flash
                                 self.wrong_chord_flash = True
                                 self.flash_start_time = time.time()
