@@ -252,6 +252,7 @@ class HandApp(QWidget):
 
         self.game_mode = False
         self.testing_mode = False
+        self.test_signal_time = 0  # For latency measurement in testing mode
         self.current_note_index = 0
         self.wrong_chord_flash = False
         self.flash_start_time = 0
@@ -354,8 +355,10 @@ class HandApp(QWidget):
     def keyPressEvent(self, event):
         """Handle keyboard events - space bar triggers strum when testing mode is enabled"""
         if event.key() == Qt.Key_Space and self.testing_mode:
-            print("Space bar pressed - triggering test strum")
-            self.handle_ble_notification("1")
+            print("Space bar pressed - simulating BLE strum signal")
+            # Record timestamp when simulated signal is sent
+            self.test_signal_time = time.time()
+            self.handle_ble_notification("1,0.8")  # Simulate signal with velocity
         else:
             super().keyPressEvent(event)
 
@@ -528,9 +531,12 @@ class HandApp(QWidget):
 
     async def play_notes_with_delay(self, to_start):
         print("self.use_velocity", self.use_velocity)
+
+        # Measure latency if this is a test signal
+        first_note = True
         for note in to_start:
             if self.use_velocity:
-                velocity = self.velocity[0] 
+                velocity = self.velocity[0]
                 velocity = min(1.2, velocity)
                 ms_delay = max(0.01, min(0.1, 1.2 - velocity * 0.15))
             else:
@@ -540,6 +546,12 @@ class HandApp(QWidget):
             await asyncio.sleep(ms_delay)
             getattr(self, note).stop()
             getattr(self, note).play()
+
+            # Measure and print latency for first note in testing mode
+            if first_note and self.testing_mode and hasattr(self, 'test_signal_time'):
+                latency_ms = (time.time() - self.test_signal_time) * 1000
+                print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
+                first_note = False
         
     async def update_frame(self):
         if self.cap is None:
