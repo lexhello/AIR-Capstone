@@ -250,6 +250,7 @@ class HandApp(QWidget):
             except Exception as e:
                 print(f"Error loading image {img_path}: {e}")
         self.last_hand_landmarks = None  
+        self.counter = 0
         self.game_mode = False
         self.testing_mode = False
         self.test_signal_time = 0  # For latency measurement in testing mode
@@ -352,6 +353,8 @@ class HandApp(QWidget):
         if items[0] == "1":
             self.new_strum_flag[0] = True
             self.velocity[0] = float(items[1]) if len(items) > 1 else 0.0
+            self.counter+=1
+            print(self.counter)
         if items[0] == "0":
             self.stop_sound_flag[0] = True
 
@@ -541,7 +544,7 @@ class HandApp(QWidget):
             if self.use_velocity:
                 velocity = self.velocity[0]
                 velocity = min(1.2, velocity)
-                ms_delay = max(0.01, min(0.1, 1.2 - velocity * 0.15))
+                ms_delay = max(0.01, max(0.1, 1.2 - velocity * 0.15))
             else:
                 # Use slider value for delay
                 selected_value = self.value_slider.value()
@@ -786,13 +789,16 @@ if __name__ == "__main__":
     # Create async task for BLE init
     async def setup():
         print("Setting up BLE...")
+        start = time.perf_counter()
         await win.init_ble()
-        print("BLE initialized and notifications handler created")
+        end = time.perf_counter()
+        print(f"BLE initialized and notifications handler created in {end - start:.2f} seconds")
+    
 
     # Enable testing mode (space bar to trigger strum)
-    win.testing_mode = True
+    win.testing_mode = False
 
-    # loop.create_task(setup())
+    loop.create_task(setup())
     win.show()
     
     with loop:
