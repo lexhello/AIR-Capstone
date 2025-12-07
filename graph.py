@@ -13,7 +13,7 @@ for v in velocities:
 
 plt.figure(figsize=(8, 5))
 plt.plot(velocities, ms_delay_values)
-plt.xlabel("Velocity")
+plt.xlabel("Instantaneous Velocity m/s")
 plt.ylabel("ms_delay")
 plt.title("ms_delay as a Function of Velocity")
 plt.grid(True)

@@ -78,16 +78,45 @@ class HandApp(QWidget):
             }
         """)
 
-        self.Overlap_sounds_button = QPushButton("Overlap\nOFF")
+        self.mode_dropdown = QComboBox()
+        self.mode_dropdown.addItems(["piano", "lisa", "guitar"])
+        self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
+        self.mode_dropdown.setMinimumWidth(100)
+        self.mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.mode_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QComboBox:hover {
+                background-color: #7B1FA2;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #9C27B0;
+                color: white;
+                selection-background-color: #7B1FA2;
+            }
+        """)
+
+        self.Overlap_sounds_button = QPushButton("Overlap OFF")
         self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
-        self.Overlap_sounds_button.setMinimumSize(100, 100)
+        self.Overlap_sounds_button.setMinimumWidth(100)
+        # self.Overlap_sounds_button.setMinimumSize(100, 100)
         self.Overlap_sounds_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.Overlap_sounds_button.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
                 color: white;
                 border: none;
-                border-radius: 15px;
+                border-radius: 8px;
                 font-size: 14px;
                 font-weight: bold;
             }
@@ -119,35 +148,7 @@ class HandApp(QWidget):
                 background-color: #6A1B9A;
             }
         """)
-
-
-        self.mode_dropdown = QComboBox()
-        self.mode_dropdown.addItems(["piano", "lisa", "guitar"])
-        self.mode_dropdown.currentIndexChanged.connect(self.on_dropdown_change)
-        self.mode_dropdown.setMinimumWidth(100)
-        self.mode_dropdown.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.mode_dropdown.setStyleSheet("""
-            QComboBox {
-                background-color: #9C27B0;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 10px 15px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QComboBox:hover {
-                background-color: #7B1FA2;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #9C27B0;
-                color: white;
-                selection-background-color: #7B1FA2;
-            }
-        """)
+        
         self.velocity_button = QPushButton("Slider\nMode")
         self.velocity_button.clicked.connect(self.toggle_velocity)
         self.velocity_button.setMinimumSize(100, 100)
@@ -295,9 +296,9 @@ class HandApp(QWidget):
         # Left side - vertical layout for controls
         left_layout = QVBoxLayout()
         left_layout.addWidget(self.Camera_button)
+        left_layout.addWidget(self.mode_dropdown)
         left_layout.addWidget(self.Overlap_sounds_button)
         left_layout.addWidget(self.velocity_button)
-        left_layout.addWidget(self.mode_dropdown)
         left_layout.addWidget(self.slider_label)
         left_layout.addWidget(self.value_slider)
         left_layout.addWidget(self.game_mode_button)
@@ -468,11 +469,11 @@ class HandApp(QWidget):
     
     def overlap_sounds(self):
         if not self.sound_overlapping:
-            self.Overlap_sounds_button.setText("Overlap\nON")
+            self.Overlap_sounds_button.setText("Overlap ON")
             self.sound_overlapping = True
         else:
             self.sound_overlapping = False
-            self.Overlap_sounds_button.setText("Overlap\nOFF")
+            self.Overlap_sounds_button.setText("Overlap OFF")
 
     def toggle_velocity(self):
         if not self.use_velocity:
@@ -753,9 +754,9 @@ if __name__ == "__main__":
     
 
     # Enable testing mode (space bar to trigger strum)
-    win.testing_mode = False
+    win.testing_mode = True
 
-    loop.create_task(setup())
+    #loop.create_task(setup())
     win.show()
     
     with loop:
