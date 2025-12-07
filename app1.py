@@ -250,11 +250,13 @@ class HandApp(QWidget):
                     print(f"Failed to load image: {img_path}")
             except Exception as e:
                 print(f"Error loading image {img_path}: {e}")
-
+        self.last_hand_landmarks = None  
         self.counter = 0
         self.game_mode = False
         self.testing_mode = False
         self.test_signal_time = 0  # For latency measurement in testing mode
+        self.previous_pattern = None  # Track previous pattern for gesture switch timing
+        self.last_pattern_time = 0  # Track when last pattern was detected
         self.current_note_index = 0
         self.wrong_chord_flash = False
         self.flash_start_time = 0
@@ -330,6 +332,7 @@ class HandApp(QWidget):
         self.velocity = [0.0]
         self.sound_overlapping = False
         self.use_velocity = False  # Toggle between velocity-based and slider-based delay
+        self.pattern_recognition_time = 0
 
         # Audio
         try:
@@ -556,6 +559,7 @@ class HandApp(QWidget):
                 latency_ms = (time.time() - self.test_signal_time) * 1000
                 print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
                 first_note = False
+            print(f"pattern to sound play: {time.time() - self.pattern_recognition_time:.5f}s")
         
     async def update_frame(self):
         if self.cap is None:
@@ -565,11 +569,21 @@ class HandApp(QWidget):
         if not ret:
             return
 
+        # Start timing for detection lag measurement
+        frame_start_time = time.time()
+
         frame = cv2.flip(frame, 1)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = hands.process(frame)
+        # print "landmarks are changing" if landmarks changed from last time
+        if results.multi_hand_landmarks != self.last_hand_landmarks:
+            print("Landmarks changed")
+            self.last_hand_landmarks = results.multi_hand_landmarks
+
+         # Analyze hand landmarks
 
         finger_text = "No hand detected"
+        pattern_text = ""
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
@@ -587,10 +601,39 @@ class HandApp(QWidget):
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Bent", "Bent", "Bent", "Bent"], ["a4", "c5"]),
                 ]
                 self.currently_playing.clear()
-                for fingers, states_list, notes in patterns:
+                current_pattern = None
+                for pattern_idx, (fingers, states_list, notes) in enumerate(patterns, start=1):
                     if all(states[f] == s for f, s in zip(fingers, states_list)):
                         self.selected_notes.update(notes)
+                        current_time = time.time()
+                        self.pattern_recognition_time = current_time
+
+                        if pattern_idx == 4:
+                            current_pattern = 3
+                        elif pattern_idx > 4:
+                            current_pattern = pattern_idx - 1
+                        else:
+                            current_pattern = pattern_idx
+
+                        # Measure detection lag (frame capture to pattern detection)
+                        detection_lag_ms = (current_time - frame_start_time) * 1000
+
+                        # Measure gesture switch time if pattern changed
+                        if self.previous_pattern is not None and current_pattern != self.previous_pattern:
+                            switch_time_ms = (current_time - self.last_pattern_time) * 1000
+                            print(f"🔄 GESTURE SWITCH: Pattern {self.previous_pattern} → {current_pattern}")
+                            print(f"   Total switch time: {switch_time_ms:.2f}ms | Detection lag: {detection_lag_ms:.2f}ms")
+                        elif self.testing_mode:
+                            # In testing mode, show detection lag for every frame
+                            print(f"⚡ DETECTION LAG: {detection_lag_ms:.2f}ms (frame → pattern {current_pattern})")
+
+                        self.previous_pattern = current_pattern
+                        self.last_pattern_time = current_time
                         break
+
+                # Update pattern text
+                if current_pattern is not None:
+                    pattern_text = f" | Pattern {current_pattern}"
 
                 # Track if pattern changed
                 pattern_changed = self.selected_notes != self.previous_selected_notes
@@ -654,7 +697,7 @@ class HandApp(QWidget):
                 self.currently_playing = set()
                 self.selected_notes = set()
 
-        self.status_label.setText(f"Finger Status: {finger_text}")
+        self.status_label.setText(f"Finger Status: {finger_text}\n{pattern_text}")
 
         if self.game_mode:
             selected_song = self.game_song_dropdown.currentText()
