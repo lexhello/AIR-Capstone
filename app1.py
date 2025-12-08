@@ -234,8 +234,8 @@ class HandApp(QWidget):
             "d4": {"d4", "f4", "a4"},
             "e4": {"e4", "g4", "b4"},
             "f4": {"f4", "a4", "c5"},
-            "g4": {"g4", "b4", "d4"},
-            "a4": {"a4", "c5"}
+            "g4": {"g4", "b4", "d5"},
+            "a4": {"a4", "c5", "e5"},
         }
 
         # Map notes to finger position images
@@ -343,6 +343,17 @@ class HandApp(QWidget):
         self.sound_overlapping = False
         self.use_velocity = False  # Toggle between velocity-based and slider-based delay
         self.pattern_recognition_time = 0
+        self.current_pattern_display = None  # Store current pattern for non-game mode display
+
+        # Map pattern numbers to their primary note for image display
+        self.pattern_to_note = {
+            1: "c4",
+            2: "d4",
+            3: "e4",
+            4: "f4",
+            5: "g4",
+            6: "a4"
+        }
 
         # Audio
         try:
@@ -670,6 +681,7 @@ class HandApp(QWidget):
                 # Update pattern text
                 if current_pattern is not None:
                     pattern_text = f" | Pattern {current_pattern}"
+                    self.current_pattern_display = current_pattern  # Store for display
 
                 # Track if pattern changed
                 pattern_changed = self.selected_notes != self.previous_selected_notes
@@ -800,6 +812,58 @@ class HandApp(QWidget):
                             (x + text_width + padding, y + baseline + padding),
                             (0, 0, 0), -1)
                 cv2.putText(frame, text, (x, y), font, font_scale, (0, 255, 255), thickness)
+        else:
+            # Non-game mode: Display current pattern and notes
+            if hasattr(self, 'current_pattern_display') and self.current_pattern_display is not None:
+                frame_h, frame_w = frame.shape[:2]
+
+                # Display pattern number (centered)
+                text = f"Pattern {self.current_pattern_display}"
+                font = cv2.FONT_HERSHEY_DUPLEX
+                font_scale = 1.5
+                thickness = 3
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+                x = (frame_w - text_width) // 2  
+                y = 60
+                padding = 10
+                cv2.rectangle(frame,
+                            (x - padding, y - text_height - padding),
+                            (x + text_width + padding, y + baseline + padding),
+                            (0, 0, 0), -1)
+
+                cv2.putText(frame, text, (x, y), font, font_scale, (0, 200, 255), thickness)
+
+                if self.active_notes:
+                    notes_text = " + ".join([note.upper() for note in sorted(self.active_notes)])
+                    notes_display = f"Playing: {notes_text}"
+                    font_scale_notes = 1.2
+                    thickness_notes = 2
+                    (notes_width, notes_height), notes_baseline = cv2.getTextSize(notes_display, font, font_scale_notes, thickness_notes)
+
+                    x_notes = (frame_w - notes_width) // 2  # Center horizontally
+                    y_notes = y + 50
+                    cv2.rectangle(frame,
+                                (x_notes - padding, y_notes - notes_height - padding),
+                                (x_notes + notes_width + padding, y_notes + notes_baseline + padding),
+                                (0, 0, 0), -1)
+
+                    cv2.putText(frame, notes_display, (x_notes, y_notes), font, font_scale_notes, (0, 255, 0), thickness_notes)
+
+                if self.current_pattern_display in self.pattern_to_note:
+                    note_for_image = self.pattern_to_note[self.current_pattern_display]
+                    if note_for_image in self.finger_images:
+                        finger_img = self.finger_images[note_for_image]
+                        img_h, img_w = finger_img.shape[:2]
+                        target_size = 200
+                        scale = target_size / max(img_h, img_w)
+                        new_w, new_h = int(img_w * scale), int(img_h * scale)
+                        resized_img = cv2.resize(finger_img, (new_w, new_h))
+
+                        img_x = frame_w - new_w - 20
+                        img_y = 20
+
+                        frame[img_y:img_y+new_h, img_x:img_x+new_w] = resized_img
 
         # Red flash overlay for wrong chords
         if self.wrong_chord_flash:
