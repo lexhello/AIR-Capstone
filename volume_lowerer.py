@@ -75,14 +75,14 @@ def reduce_low_frequencies(input_wav, output_wav, cutoff=200, reduction=0.5, fad
     print("Saved with fade:", output_wav)
 
 # Example usage:
-reduce_low_frequencies("static/audio/guitar-a4-old.wav", "static/audio/guitar-a4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-b4-old.wav", "static/audio/guitar-b4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-c3-old.wav", "static/audio/guitar-c3.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-c4-old.wav", "static/audio/guitar-c4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-d4-old.wav", "static/audio/guitar-d4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-e4-old.wav", "static/audio/guitar-e4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-f4-old.wav", "static/audio/guitar-f4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
-reduce_low_frequencies("static/audio/guitar-g4-old.wav", "static/audio/guitar-g4.wav", cutoff=400, reduction=0.1, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-a4-old.wav", "static/audio/guitar-a4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-b4-old.wav", "static/audio/guitar-b4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-c3-old.wav", "static/audio/guitar-c3.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-c4-old.wav", "static/audio/guitar-c4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-d4-old.wav", "static/audio/guitar-d4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-e4-old.wav", "static/audio/guitar-e4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-f4-old.wav", "static/audio/guitar-f4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
+reduce_low_frequencies("static/audio/guitar-g4-old.wav", "static/audio/guitar-g4.wav", cutoff=400, reduction=0.05, fade_out_ms=20)
 
 # Example usage to just reduce volum
 # reduce_volume("static/audio/guitar-a4-old.wav", "static/audio/guitar-a4.wav", reduction_factor=0.2)
