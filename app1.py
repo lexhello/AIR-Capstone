@@ -346,7 +346,8 @@ class HandApp(QWidget):
         except Exception:
             self.sound = None
             print("No beep.wav found – sound disabled.")
-        pygame.mixer.init()
+        # buffer
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
         self.load_audio_files(self.mode_dropdown.currentText())
 
         # BLE
@@ -386,6 +387,8 @@ class HandApp(QWidget):
                 self.a4 = pygame.mixer.Sound("static/audio/a4.mp3")
                 self.b4 = pygame.mixer.Sound("static/audio/b4.mp3")
                 self.c5 = pygame.mixer.Sound("static/audio/c5.mp3")
+                self.d5 = pygame.mixer.Sound("static/audio/d5.mp3")
+                self.e5 = pygame.mixer.Sound("static/audio/e5.mp3")
             elif mode == "lisa":
                 self.c4 = pygame.mixer.Sound("static/audio/lisa-a3.mp3")
                 self.d4 = pygame.mixer.Sound("static/audio/lisa-b3.mp3")
@@ -395,6 +398,8 @@ class HandApp(QWidget):
                 self.a4 = pygame.mixer.Sound("static/audio/lisa-f4.mp3")
                 self.b4 = pygame.mixer.Sound("static/audio/lisa-g4.mp3")
                 self.c5 = pygame.mixer.Sound("static/audio/lisa-a4.mp3")
+                self.d5 = None
+                self.e5 = None
             elif mode == "guitar":
                 print("Loading guitar audio files...")
                 self.c4 = pygame.mixer.Sound("static/audio/guitar-c3.wav")
@@ -405,6 +410,8 @@ class HandApp(QWidget):
                 self.a4 = pygame.mixer.Sound("static/audio/guitar-a4.wav")
                 self.b4 = pygame.mixer.Sound("static/audio/guitar-b4.wav")
                 self.c5 = pygame.mixer.Sound("static/audio/guitar-c4.wav")
+                self.d5 = pygame.mixer.Sound("static/audio/guitar-d5.wav")
+                self.e5 = pygame.mixer.Sound("static/audio/guitar-e5.wav")
             print(f"{mode} audio files loaded successfully.")
         except Exception as e:
             print("Error loading audio:", e)
@@ -545,26 +552,35 @@ class HandApp(QWidget):
     async def play_notes_with_delay(self, to_start):
         print("self.use_velocity", self.use_velocity)
 
-        # Measure latency if this is a test signal
-        first_note = True
-        for note in to_start:
-            if self.use_velocity:
-                velocity = self.velocity[0]
-                velocity = min(1.2, velocity)
-                ms_delay = max(0.01, max(0.1, 1.2 - velocity * 0.15))
-            else:
-                # Use slider value for delay
-                selected_value = self.value_slider.value()
-                ms_delay = ((selected_value-1)*7)/1000.0
-            await asyncio.sleep(ms_delay)
+        # Convert to list for indexed iteration
+        notes_list = list(to_start)
+
+        for i, note in enumerate(notes_list):
+            # Only add delay BETWEEN notes, not before the first one
+            if i > 0:
+                if self.use_velocity:
+                    velocity = self.velocity[0]
+                    velocity = min(1.2, velocity)
+                    ms_delay = max(0.01, max(0.1, 1.2 - velocity * 0.15))
+                else:
+                    # Use slider value for delay
+                    selected_value = self.value_slider.value()
+                    ms_delay = ((selected_value-1)*7)/1000.0
+                await asyncio.sleep(ms_delay)
+                print(f"Delay before note {note}: {ms_delay*1000:.1f}ms")
+
+            # Play the note
+            # if note is not none, stop/play
+            if getattr(self, note) is None:
+                print(f"Note {note} audio not loaded.")
+                continue
             getattr(self, note).stop()
             getattr(self, note).play()
 
             # Measure and print latency for first note in testing mode
-            if first_note and self.testing_mode and hasattr(self, 'test_signal_time'):
+            if i == 0 and self.testing_mode and hasattr(self, 'test_signal_time'):
                 latency_ms = (time.time() - self.test_signal_time) * 1000
                 print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
-                first_note = False
             # print(f"pattern to sound play: {time.time() - self.pattern_recognition_time:.5f}s")
         
     async def update_frame(self):
@@ -603,8 +619,8 @@ class HandApp(QWidget):
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Straight", "Straight", "Bent"], ["e4", "g4", "b4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Bent", "Straight", "Straight", "Straight"], ["e4", "g4", "b4"]),
                     (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Bent", "Straight", "Straight", "Straight", "Straight"], ["f4", "a4", "c5"]),
-                    (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Straight", "Straight", "Straight", "Straight"], ["g4", "b4", "d4"]),
-                    (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Bent", "Bent", "Bent", "Bent"], ["a4", "c5"]),
+                    (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Straight", "Straight", "Straight", "Straight"], ["g4", "b4", "d5"]),
+                    (["Thumb", "Index", "Middle", "Ring", "Pinky"], ["Straight", "Bent", "Bent", "Bent", "Bent"], ["a4", "c5", "e5"]),
                 ]
                 self.currently_playing.clear()
                 current_pattern = None
@@ -690,7 +706,8 @@ class HandApp(QWidget):
                 # Stop notes
                 if not self.sound_overlapping:
                     for note in to_stop:
-                        getattr(self, note).stop()
+                        if getattr(self, note) is not None:
+                            getattr(self, note).stop()
 
                 if to_start:
                     # Play the notes on strum (only if not in game mode OR chord is correct)
