@@ -376,6 +376,16 @@ class HandApp(QWidget):
         else:
             super().keyPressEvent(event)
 
+    def keyReleaseEvent(self, event):
+        """Handle key release events"""
+        if event.key() == Qt.Key_Up:
+            # Release up key to stop sounds (set stop flag to True)
+            self.handle_ble_notification("0, 0.8")
+            print("Up key released - stop flag set to True")
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
     def load_audio_files(self, mode):
         try:
             if mode == "piano":
@@ -574,7 +584,7 @@ class HandApp(QWidget):
             if getattr(self, note) is None:
                 print(f"Note {note} audio not loaded.")
                 continue
-            getattr(self, note).stop()
+            # getattr(self, note).stop()
             getattr(self, note).play()
 
             # Measure and print latency for first note in testing mode
@@ -694,20 +704,30 @@ class HandApp(QWidget):
                         # Update previous pattern after validation
                         self.previous_selected_notes = self.selected_notes.copy()
                     
-                    self.new_strum_flag[0] = False  # reset flag
+                    
                     
                 elif self.stop_sound_flag[0]:
                     to_stop = self.active_notes
                     self.active_notes = set()
-                    self.stop_sound_flag[0] = False  # reset flag
+                    # self.stop_sound_flag[0] = False  # reset flag
                 
-                to_start = self.currently_playing
-
-                # Stop notes
-                if not self.sound_overlapping:
+                if self.sound_overlapping:
+                    for note in to_stop:
+                        if getattr(self, note) is not None and note in self.currently_playing:
+                            getattr(self, note).stop()
+                elif not self.sound_overlapping and self.new_strum_flag[0]:
                     for note in to_stop:
                         if getattr(self, note) is not None:
                             getattr(self, note).stop()
+                if self.stop_sound_flag[0]:
+                    for note in to_stop:
+                        if getattr(self, note) is not None:
+                            getattr(self, note).stop()
+                self.new_strum_flag[0] = False  # reset flag
+                self.stop_sound_flag[0] = False  # reset flag
+                
+                to_start = self.currently_playing
+                
 
                 if to_start:
                     # Play the notes on strum (only if not in game mode OR chord is correct)
@@ -822,7 +842,7 @@ if __name__ == "__main__":
     # Enable testing mode (space bar to trigger strum)
     win.testing_mode = True
 
-    #loop.create_task(setup())
+    # loop.create_task(setup())
     win.show()
     
     with loop:
