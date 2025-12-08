@@ -6,13 +6,18 @@
 #include <Adafruit_BNO08x.h>
 #include <math.h>
 
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+// new uuid
+#define SERVICE_UUID        "c8b8f3c0-7c72-4cf2-8d1f-59fb7a5e4a1b"
+#define CHARACTERISTIC_UUID "f1a7d8b3-2c44-4c51-9f44-bad597c893c7"
+
+// original uuid
+// #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+// #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 const int FSR_PIN  = A1; // 3.3V -> FSR -> Node -> 10kΩ -> GND, Node -> A1
 
 const int FSR_PRESS_ON  = 500;
-const int FSR_PRESS_OFF = 400;
+const int FSR_PRESS_OFF = 350;
 
 BLECharacteristic *pCharacteristic;
 

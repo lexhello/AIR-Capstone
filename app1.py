@@ -28,8 +28,12 @@ FINGER_NAMES = ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 
 DELAYS = [0.040, 0.030, 0.020, 0.010]
 
-SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+# SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+# CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+
+# second glove uuid
+SERVICE_UUID        = "c8b8f3c0-7c72-4cf2-8d1f-59fb7a5e4a1b"
+CHARACTERISTIC_UUID = "f1a7d8b3-2c44-4c51-9f44-bad597c893c7"
 
 class HandApp(QWidget):
     
@@ -569,7 +573,7 @@ class HandApp(QWidget):
             # Only add delay BETWEEN notes, not before the first one
             if i > 0:
                 if self.use_velocity:
-                    velocity = self.velocity[0]
+                    velocity = self.velocity[0]/10.0
                     velocity = min(1.2, velocity)
                     ms_delay = max(0.01, max(0.1, 1.2 - velocity * 0.15))
                 else:
