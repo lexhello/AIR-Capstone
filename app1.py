@@ -908,9 +908,9 @@ if __name__ == "__main__":
     
 
     # Enable testing mode (space bar to trigger strum)
-    win.testing_mode = True
+    win.testing_mode = False
 
-    # loop.create_task(setup())
+    loop.create_task(setup())
     win.show()
     
     with loop:
