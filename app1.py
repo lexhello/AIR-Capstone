@@ -39,7 +39,14 @@ class HandApp(QWidget):
         super().__init__()
         self.ble_notification_signal.connect(self.handle_ble_notification)
         self.setWindowTitle("MediaPipe Hand Detection App")
+
+        screen = QApplication.primaryScreen().geometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+
         self.setGeometry(300, 200, 700, 700)
+        self.setMinimumSize(700, 700)
+        self.setMaximumSize(screen_width, screen_height)
 
         # UI elements
         self.video_label = QLabel()
@@ -108,8 +115,7 @@ class HandApp(QWidget):
 
         self.Overlap_sounds_button = QPushButton("Overlap OFF")
         self.Overlap_sounds_button.clicked.connect(self.overlap_sounds)
-        self.Overlap_sounds_button.setMinimumWidth(100)
-        # self.Overlap_sounds_button.setMinimumSize(100, 100)
+        self.Overlap_sounds_button.setMinimumSize(100, 100)
         self.Overlap_sounds_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.Overlap_sounds_button.setStyleSheet("""
             QPushButton {
@@ -349,7 +355,7 @@ class HandApp(QWidget):
     def handle_ble_notification(self, decoded: str):
         """Called in Qt event loop - safe to update UI and flags"""
         print(f"BLE Notification: {decoded}", file=sys.stderr, flush=True)
-        self.status_label.setText(f"BLE: {decoded}")
+        # self.status_label.setText(f"BLE: {decoded}")
         items = decoded.strip().split(",")
         if items[0] == "1":
             self.new_strum_flag[0] = True
@@ -559,7 +565,7 @@ class HandApp(QWidget):
                 latency_ms = (time.time() - self.test_signal_time) * 1000
                 print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
                 first_note = False
-            print(f"pattern to sound play: {time.time() - self.pattern_recognition_time:.5f}s")
+            # print(f"pattern to sound play: {time.time() - self.pattern_recognition_time:.5f}s")
         
     async def update_frame(self):
         if self.cap is None:
@@ -577,7 +583,7 @@ class HandApp(QWidget):
         results = hands.process(frame)
         # print "landmarks are changing" if landmarks changed from last time
         if results.multi_hand_landmarks != self.last_hand_landmarks:
-            print("Landmarks changed")
+            # print("Landmarks changed")
             self.last_hand_landmarks = results.multi_hand_landmarks
 
          # Analyze hand landmarks
@@ -621,11 +627,11 @@ class HandApp(QWidget):
                         # Measure gesture switch time if pattern changed
                         if self.previous_pattern is not None and current_pattern != self.previous_pattern:
                             switch_time_ms = (current_time - self.last_pattern_time) * 1000
-                            print(f"🔄 GESTURE SWITCH: Pattern {self.previous_pattern} → {current_pattern}")
-                            print(f"   Total switch time: {switch_time_ms:.2f}ms | Detection lag: {detection_lag_ms:.2f}ms")
-                        elif self.testing_mode:
-                            # In testing mode, show detection lag for every frame
-                            print(f"⚡ DETECTION LAG: {detection_lag_ms:.2f}ms (frame → pattern {current_pattern})")
+                            # print(f"🔄 GESTURE SWITCH: Pattern {self.previous_pattern} → {current_pattern}")
+                            # print(f"   Total switch time: {switch_time_ms:.2f}ms | Detection lag: {detection_lag_ms:.2f}ms")
+                        # elif self.testing_mode:
+                        #     # In testing mode, show detection lag for every frame
+                        #     print(f"⚡ DETECTION LAG: {detection_lag_ms:.2f}ms (frame → pattern {current_pattern})")
 
                         self.previous_pattern = current_pattern
                         self.last_pattern_time = current_time
