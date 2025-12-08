@@ -759,7 +759,7 @@ class HandApp(QWidget):
             song_notes = self.songs[selected_song]
             if self.current_note_index < len(song_notes):
                 current_note = song_notes[self.current_note_index]
-                text = f"Play: {current_note.upper()}"
+                text = f"Play: {current_note.upper()[0]}"
                 font = cv2.FONT_HERSHEY_DUPLEX
                 font_scale = 2.5
                 thickness = 4
@@ -814,15 +814,16 @@ class HandApp(QWidget):
                 frame_h, frame_w = frame.shape[:2]
 
                 # Display pattern number (centered)
-                text = f"Pattern {self.current_pattern_display}"
+                text = f"{self.pattern_to_note[self.current_pattern_display][0].upper()} (Pattern {self.current_pattern_display})"
                 font = cv2.FONT_HERSHEY_DUPLEX
-                font_scale = 1.5
-                thickness = 3
+                font_scale = 2.5
+                thickness = 4
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
                 (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
 
-                x = (frame_w - text_width) // 2  
-                y = 60
-                padding = 10
+                x = (frame_w - text_width) // 2
+                y = 100
+                padding = 15
                 cv2.rectangle(frame,
                             (x - padding, y - text_height - padding),
                             (x + text_width + padding, y + baseline + padding),
@@ -838,7 +839,7 @@ class HandApp(QWidget):
                     (notes_width, notes_height), notes_baseline = cv2.getTextSize(notes_display, font, font_scale_notes, thickness_notes)
 
                     x_notes = (frame_w - notes_width) // 2  # Center horizontally
-                    y_notes = y + 50
+                    y_notes = y + 80
                     cv2.rectangle(frame,
                                 (x_notes - padding, y_notes - notes_height - padding),
                                 (x_notes + notes_width + padding, y_notes + notes_baseline + padding),
