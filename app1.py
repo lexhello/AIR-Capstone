@@ -274,6 +274,7 @@ class HandApp(QWidget):
         self.current_chord_correct = True  # Track if current chord is correct
         self.last_chord_change_time = 0
         self.chord_debounce_time = 0.5  
+        self.cached_pattern_notes = set()
         self.game_song_dropdown = QComboBox()
         self.game_song_dropdown.addItems(self.songs.keys())
         self.game_song_dropdown.currentIndexChanged.connect(self.on_game_song_change)
@@ -376,10 +377,46 @@ class HandApp(QWidget):
         if items[0] == "1":
             self.new_strum_flag[0] = True
             self.velocity[0] = float(items[1]) if len(items) > 1 else 0.0
-            self.counter+=1
-            print(self.counter)
+            
+            to_stop = self.active_notes
+            self.currently_playing = self.cached_pattern_notes.copy()
+            self.active_notes = self.currently_playing.copy()
+                
+            if self.sound_overlapping:
+                for note in to_stop:
+                    if getattr(self, note) is not None and note in self.currently_playing:
+                        getattr(self, note).stop()
+            elif not self.sound_overlapping and self.new_strum_flag[0]:
+                for note in to_stop:
+                    if getattr(self, note) is not None:
+                        getattr(self, note).stop()
+            if self.stop_sound_flag[0]:
+                for note in to_stop:
+                    if getattr(self, note) is not None:
+                        getattr(self, note).stop()
+            self.new_strum_flag[0] = False  # reset flag
+            self.stop_sound_flag[0] = False  # reset flag
+            
+            to_start = self.currently_playing
+            
+
+            if to_start:
+                # Play the notes on strum (only if not in game mode OR chord is correct)
+                should_play = not self.game_mode or self.current_chord_correct
+                if should_play:
+                    asyncio.create_task(self.play_notes_with_delay(to_start))
+                else:
+                    print("✗ Not playing - wrong chord held")
+
+            self.currently_playing = set()
+            self.selected_notes = set()
+            
         if items[0] == "0":
             self.stop_sound_flag[0] = True
+            if self.stop_sound_flag[0]:
+                    to_stop = self.active_notes
+                    self.active_notes = set()
+                    self.stop_sound_flag[0] = False  # reset flag
 
     def keyPressEvent(self, event):
         """Handle keyboard events - space bar triggers strum when testing mode is enabled"""
@@ -581,6 +618,13 @@ class HandApp(QWidget):
         notes_list = list(to_start)
 
         for i, note in enumerate(notes_list):
+            
+            
+            # Measure and print latency for first note in testing mode
+            if i == 0 and self.testing_mode and hasattr(self, 'test_signal_time'):
+                latency_ms = (time.time() - self.test_signal_time) * 1000
+                print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
+            
             # Only add delay BETWEEN notes, not before the first one
             if i > 0:
                 if self.use_velocity:
@@ -592,8 +636,7 @@ class HandApp(QWidget):
                     selected_value = self.value_slider.value()
                     ms_delay = ((selected_value-1)*7)/1000.0
                 await asyncio.sleep(ms_delay)
-                print(f"Delay before note {note}: {ms_delay*1000:.1f}ms")
-
+                # print(f"Delay before note {note}: {ms_delay*1000:.1f}ms")
             # Play the note
             # if note is not none, stop/play
             if getattr(self, note) is None:
@@ -602,12 +645,6 @@ class HandApp(QWidget):
             # getattr(self, note).stop()
             getattr(self, note).play()
 
-            # Measure and print latency for first note in testing mode
-            if i == 0 and self.testing_mode and hasattr(self, 'test_signal_time'):
-                latency_ms = (time.time() - self.test_signal_time) * 1000
-                print(f"⏱️  LATENCY: {latency_ms:.2f}ms (signal → sound)")
-            # print(f"pattern to sound play: {time.time() - self.pattern_recognition_time:.5f}s")
-        
     async def update_frame(self):
         if self.cap is None:
             return
@@ -650,33 +687,37 @@ class HandApp(QWidget):
                 self.currently_playing.clear()
                 current_pattern = None
                 for pattern_idx, (fingers, states_list, notes) in enumerate(patterns, start=1):
+                    
                     if all(states[f] == s for f, s in zip(fingers, states_list)):
                         self.selected_notes.update(notes)
+                        self.cached_pattern_notes = notes.copy()  # Cache immediately
+                        
                         current_time = time.time()
                         self.pattern_recognition_time = current_time
-
-                        if pattern_idx == 4:
-                            current_pattern = 3
-                        elif pattern_idx > 4:
-                            current_pattern = pattern_idx - 1
-                        else:
-                            current_pattern = pattern_idx
-
-                        # Measure detection lag (frame capture to pattern detection)
-                        detection_lag_ms = (current_time - frame_start_time) * 1000
-
-                        # Measure gesture switch time if pattern changed
-                        if self.previous_pattern is not None and current_pattern != self.previous_pattern:
-                            switch_time_ms = (current_time - self.last_pattern_time) * 1000
-                            # print(f"🔄 GESTURE SWITCH: Pattern {self.previous_pattern} → {current_pattern}")
-                            # print(f"   Total switch time: {switch_time_ms:.2f}ms | Detection lag: {detection_lag_ms:.2f}ms")
-                        # elif self.testing_mode:
-                        #     # In testing mode, show detection lag for every frame
-                        #     print(f"⚡ DETECTION LAG: {detection_lag_ms:.2f}ms (frame → pattern {current_pattern})")
-
-                        self.previous_pattern = current_pattern
-                        self.last_pattern_time = current_time
+                        asyncio.sleep(20/1000.0)  # small delay to ensure timing accuracy
                         break
+                        # if pattern_idx == 4:
+                        #     current_pattern = 3
+                        # elif pattern_idx > 4:
+                        #     current_pattern = pattern_idx - 1
+                        # else:
+                        #     current_pattern = pattern_idx
+
+                        # # Measure detection lag (frame capture to pattern detection)
+                        # detection_lag_ms = (current_time - frame_start_time) * 1000
+
+                        # # Measure gesture switch time if pattern changed
+                        # if self.previous_pattern is not None and current_pattern != self.previous_pattern:
+                        #     switch_time_ms = (current_time - self.last_pattern_time) * 1000
+                        #     # print(f"🔄 GESTURE SWITCH: Pattern {self.previous_pattern} → {current_pattern}")
+                        #     # print(f"   Total switch time: {switch_time_ms:.2f}ms | Detection lag: {detection_lag_ms:.2f}ms")
+                        # # elif self.testing_mode:
+                        # #     # In testing mode, show detection lag for every frame
+                        # #     print(f"⚡ DETECTION LAG: {detection_lag_ms:.2f}ms (frame → pattern {current_pattern})")
+
+                        # self.previous_pattern = current_pattern
+                        # self.last_pattern_time = current_time
+                        # break
 
                 # Update pattern text
                 if current_pattern is not None:
@@ -727,34 +768,34 @@ class HandApp(QWidget):
                     self.active_notes = set()
                     # self.stop_sound_flag[0] = False  # reset flag
                 
-                if self.sound_overlapping:
-                    for note in to_stop:
-                        if getattr(self, note) is not None and note in self.currently_playing:
-                            getattr(self, note).stop()
-                elif not self.sound_overlapping and self.new_strum_flag[0]:
-                    for note in to_stop:
-                        if getattr(self, note) is not None:
-                            getattr(self, note).stop()
-                if self.stop_sound_flag[0]:
-                    for note in to_stop:
-                        if getattr(self, note) is not None:
-                            getattr(self, note).stop()
-                self.new_strum_flag[0] = False  # reset flag
-                self.stop_sound_flag[0] = False  # reset flag
+                # if self.sound_overlapping:
+                #     for note in to_stop:
+                #         if getattr(self, note) is not None and note in self.currently_playing:
+                #             getattr(self, note).stop()
+                # elif not self.sound_overlapping and self.new_strum_flag[0]:
+                #     for note in to_stop:
+                #         if getattr(self, note) is not None:
+                #             getattr(self, note).stop()
+                # if self.stop_sound_flag[0]:
+                #     for note in to_stop:
+                #         if getattr(self, note) is not None:
+                #             getattr(self, note).stop()
+                # self.new_strum_flag[0] = False  # reset flag
+                # self.stop_sound_flag[0] = False  # reset flag
                 
-                to_start = self.currently_playing
+                # to_start = self.currently_playing
                 
 
-                if to_start:
-                    # Play the notes on strum (only if not in game mode OR chord is correct)
-                    should_play = not self.game_mode or self.current_chord_correct
-                    if should_play:
-                        asyncio.create_task(self.play_notes_with_delay(to_start))
-                    else:
-                        print("✗ Not playing - wrong chord held")
+                # if to_start:
+                #     # Play the notes on strum (only if not in game mode OR chord is correct)
+                #     should_play = not self.game_mode or self.current_chord_correct
+                #     if should_play:
+                #         asyncio.create_task(self.play_notes_with_delay(to_start))
+                #     else:
+                #         print("✗ Not playing - wrong chord held")
 
-                self.currently_playing = set()
-                self.selected_notes = set()
+                # self.currently_playing = set()
+                # self.selected_notes = set()
 
         self.status_label.setText(f"Finger Status: {finger_text}\n{pattern_text}")
 
@@ -909,9 +950,9 @@ if __name__ == "__main__":
     
 
     # Enable testing mode (space bar to trigger strum)
-    win.testing_mode = False
+    win.testing_mode = True
 
-    loop.create_task(setup())
+    # loop.create_task(setup())
     win.show()
     
     with loop:
